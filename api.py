@@ -1,10 +1,20 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 import asyncio
 
 from product_info_router import get_product_info
 
 app = FastAPI(title="Scraper Bot API")
+
+def normalize_image(img: str | None):
+    if not img:
+        return None
+
+    if img.startswith("//"):
+        return "https:" + img
+
+    return img
+
 
 def normalize_product(result, url: str):
     """
@@ -16,6 +26,16 @@ def normalize_product(result, url: str):
             "price": None,
             "caption": result.get("caption"),
             "image": result.get("image"),
+            "url": result.get("url", url),
+        }
+        
+def normalize_product(result, url: str):
+    if isinstance(result, dict):
+        return {
+            "title": result.get("title"),
+            "price": result.get("price"),
+            "caption": result.get("caption"),
+            "image": normalize_image(result.get("image")),
             "url": result.get("url", url),
         }
 
