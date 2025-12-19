@@ -28,6 +28,8 @@ async def _scrape_amazon(product_url: str):
         page = await context.new_page()
 
         try:
+            await page.goto(product_url, timeout=60000)
+            await page.wait_for_timeout(random.randint(2500, 4500))
             await page.goto(product_url, timeout=90000, wait_until="domcontentloaded")
             await page.wait_for_timeout(random.randint(3500, 5500))
             # Se cair em CAPTCHA

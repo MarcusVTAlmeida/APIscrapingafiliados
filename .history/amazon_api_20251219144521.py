@@ -28,8 +28,9 @@ async def _scrape_amazon(product_url: str):
         page = await context.new_page()
 
         try:
-            await page.goto(product_url, timeout=90000, wait_until="domcontentloaded")
-            await page.wait_for_timeout(random.randint(3500, 5500))
+            await page.goto(product_url, timeout=60000)
+            await page.wait_for_timeout(random.randint(2500, 4500))
+
             # Se cair em CAPTCHA
             if "captcha" in page.url.lower():
                 await browser.close()
@@ -39,10 +40,11 @@ async def _scrape_amazon(product_url: str):
                     "url": product_url
                 }
 
-            # Título           
+            # Título
+            title = await page.locator("span#productTitle:visible").text_content()
             title = title.strip() if title else "Título não encontrado"
             title_el = page.locator("span#productTitle").first
-            title = await title_el.text_content()
+title = await title_el.text_content()
 
 
             # Imagem principal
