@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+playwright
+requests
+beautifulsoup4
+
+git init
+git add .
+git commit -m "API scraping afiliados"
+git branch -M main
+git remote add origin https://github.com/MarcusVTAlmeida/APIscraping afiliados.git
+git push -u origin main

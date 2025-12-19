@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+playwright
+requests
+beautifulsoup4
+
+git config --global user.name "Marcus Vinicius"
+git config --global user.email "marcus1134@hotmail.com"
+pip

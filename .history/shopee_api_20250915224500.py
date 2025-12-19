@@ -1,0 +1,1 @@
+https://shopee.com.br/Cabo-de-Dados-Conex%C3%A3o-USB-Lightning-Carregamento-R%C3%A1pido-25W-de-1-Metro-Kapbom-KAP-318-5G-i.1323149422.22594410588

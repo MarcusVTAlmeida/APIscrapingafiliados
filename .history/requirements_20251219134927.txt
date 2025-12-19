@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+playwright
+requests
+beautifulsoup4
+
+git config --global user.name "Marcus Viniciu
