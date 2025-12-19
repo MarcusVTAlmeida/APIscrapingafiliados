@@ -29,7 +29,7 @@ def normalize_product(result, url: str):
             "url": result.get("url", url),
         }
         
-def normalize_product(result, url: str):
+        def normalize_product(result, url: str):
     if isinstance(result, dict):
         return {
             "title": result.get("title"),

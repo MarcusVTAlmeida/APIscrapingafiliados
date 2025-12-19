@@ -28,16 +28,6 @@ def normalize_product(result, url: str):
             "image": result.get("image"),
             "url": result.get("url", url),
         }
-        
-def normalize_product(result, url: str):
-    if isinstance(result, dict):
-        return {
-            "title": result.get("title"),
-            "price": result.get("price"),
-            "caption": result.get("caption"),
-            "image": normalize_image(result.get("image")),
-            "url": result.get("url", url),
-        }
 
     if isinstance(result, tuple):
         caption, title, price, image = result
