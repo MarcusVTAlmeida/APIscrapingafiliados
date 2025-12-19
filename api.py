@@ -1,10 +1,11 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI
 from pydantic import BaseModel
 import asyncio
 
 from product_info_router import get_product_info
 
 app = FastAPI(title="Scraper Bot API")
+
 
 def normalize_image(img: str | None):
     if not img:
@@ -22,16 +23,6 @@ def normalize_product(result, url: str):
     """
     if isinstance(result, dict):
         return {
-            "title": None,
-            "price": None,
-            "caption": result.get("caption"),
-            "image": result.get("image"),
-            "url": result.get("url", url),
-        }
-        
-def normalize_product(result, url: str):
-    if isinstance(result, dict):
-        return {
             "title": result.get("title"),
             "price": result.get("price"),
             "caption": result.get("caption"),
@@ -45,7 +36,7 @@ def normalize_product(result, url: str):
             "title": title,
             "price": price,
             "caption": caption,
-            "image": image,
+            "image": normalize_image(image),
             "url": url,
         }
 
@@ -58,16 +49,9 @@ def normalize_product(result, url: str):
     }
 
 
-
 # 📥 Modelo de entrada
 class ScrapeRequest(BaseModel):
     url: str
-
-
-# 📤 Modelo de saída
-class ScrapeResponse(BaseModel):
-    caption: str | None = None
-    image: str | None = None
 
 
 @app.post("/scrape")
@@ -77,12 +61,11 @@ async def scrape_product(data: ScrapeRequest):
     try:
         result = get_product_info(url)
 
-        # 🟢 Caso async (Amazon)
+        # 🟢 Caso async (Amazon / Playwright)
         if asyncio.iscoroutine(result):
             result = await result
 
-        normalized = normalize_product(result, url)
-        return normalized
+        return normalize_product(result, url)
 
     except Exception as e:
         return {
