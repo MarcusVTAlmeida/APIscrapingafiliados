@@ -31,12 +31,45 @@ def normalize_product(result, url: str):
         }
 
     if isinstance(result, tuple):
-        caption, title, price, image = result
+        # Suporta 2 padrões comuns de tupla:
+        # 1) (caption, title, price, image)  -> padrão antigo
+        # 2) (title, price, url, image)      -> padrão ML atual
+        if len(result) == 4:
+            a, b, c, d = result
+
+            # Se o 3º item parece ser um link, então é (title, price, url, image)
+            if isinstance(c, str) and (c.startswith("http://") or c.startswith("https://")):
+                title = a
+                price = b
+                url_from_tuple = c
+                image = d
+
+                caption = f"🔥 OFERTA IMPERDÍVEL 🔥\n\n{title}\n\n💰 {price}\n\n👉 Compre agora:\n{url_from_tuple}"
+
+                return {
+                    "title": title,
+                    "price": price,
+                    "caption": caption,
+                    "image": normalize_image(image),
+                    "url": url_from_tuple,
+                }
+
+            # Caso normal: (caption, title, price, image)
+            caption, title, price, image = result
+            return {
+                "title": title,
+                "price": price,
+                "caption": caption,
+                "image": normalize_image(image),
+                "url": url,
+            }
+
+        # fallback caso venha tupla em formato inesperado
         return {
-            "title": title,
-            "price": price,
-            "caption": caption,
-            "image": normalize_image(image),
+            "title": None,
+            "price": None,
+            "caption": "❌ Retorno inesperado do scraper.",
+            "image": None,
             "url": url,
         }
 
