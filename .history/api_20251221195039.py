@@ -26,9 +26,9 @@ def normalize_product(result, url: str):
             "title": result.get("title"),
             "price": result.get("price"),
             "original_value": result.get("original_value"),
-            "caption": result.get("caption"),
-            "image": normalize_image(result.get("image")),
-            "url": result.get("url", url),
+        "caption": result.get("caption"),
+        "image": normalize_image(result.get("image")),
+        "url": result.get("url", url),
         }
 
     if isinstance(result, tuple):
