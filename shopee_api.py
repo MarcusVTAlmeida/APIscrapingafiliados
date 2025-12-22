@@ -6,9 +6,11 @@ API_URL = "https://open-api.affiliate.shopee.com.br/graphql"
 
 def extract_item_id(product_url):
     match = re.search(r'-i\.\d+\.(\d+)', product_url)
-    if match: return match.group(1)
+    if match: 
+        return match.group(1)
     match = re.search(r'/product/\d+/(\d+)', product_url)
-    if match: return match.group(1)
+    if match: 
+        return match.group(1)
     return None
 
 def generate_signature(payload, timestamp):
@@ -29,7 +31,7 @@ def get_shopee_product_info(product_url):
 
     timestamp = int(time.time())
 
-    # Gerar link afiliado
+    # Gerar link afiliado encurtado
     payload_shortlink = {
         "query": f"""mutation {{ generateShortLink(input: {{ originUrl: "{product_url}", subIds: ["s1"] }}) {{ shortLink }} }}"""
     }
@@ -42,7 +44,10 @@ def get_shopee_product_info(product_url):
 
     response = requests.post(API_URL, data=payload_json, headers=headers, timeout=15)
     data = response.json()
-    if "errors" in data or not data.get("data", {}).get("generateShortLink", {}).get("shortLink"):
+
+    short_link = data.get("data", {}).get("generateShortLink", {}).get("shortLink")
+
+    if not short_link or "errors" in data:
         return {
             "title": None,
             "price": None,
@@ -51,8 +56,6 @@ def get_shopee_product_info(product_url):
             "image": None,
             "url": product_url,
         }
-
-    short_link = data["data"]["generateShortLink"]["shortLink"]
 
     # Buscar informações do produto
     payload_product = {
@@ -83,24 +86,26 @@ def get_shopee_product_info(product_url):
         max_price = node.get("priceMax")
         image_url = node.get("imageUrl")
 
+        # Formatar preços
         if min_price and max_price:
+            # Converte string para float e formata como R$ X.XXX,YY
             if min_price == max_price:
                 price_text = f"R$ {float(min_price):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             else:
                 original_value = f"R$ {float(max_price):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
                 price_text = f"R$ {float(min_price):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-    # Texto (caption) pronto para compartilhar
+    # Monta caption no padrão dos outros
     if original_value and price_text != "Preço indisponível":
-        resultado_formatado = f"📦 {productname}\n💰 De {original_value} por {price_text}\n🔗 {short_link}"
+        caption = f"📦 {productname}\n💰 De {original_value} por {price_text}\n🔗 {short_link}"
     else:
-        resultado_formatado = f"📦 {productname}\n💰 {price_text}\n🔗 {short_link}"
+        caption = f"📦 {productname}\n💰 {price_text}\n🔗 {short_link}"
 
     return {
         "title": productname,
         "price": price_text,
         "original_value": original_value,
-        "caption": resultado_formatado,
+        "caption": caption,
         "image": image_url,
-        "url": short_link,  # link afiliado no campo certo
+        "url": short_link,
     }

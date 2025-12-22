@@ -22,14 +22,14 @@ def normalize_product(result, url: str):
     Normaliza qualquer retorno (dict | tuple) para o padrão da API
     """
     if isinstance(result, dict):
-        return {
-            "title": result.get("title"),
-            "price": result.get("price"),
-            "original_value": result.get("original_value"),
-            "caption": result.get("caption"),
-            "image": normalize_image(result.get("image")),
-            "url": result.get("url", url),
-        }
+            return {
+"title": result.get("title"),
+"price": result.get("price"),
+"original_value": result.get("original_value"),
+"caption": result.get("caption"),
+"image": normalize_image(result.get("image")),
+"url": result.get("url", url),
+}
 
     if isinstance(result, tuple):
         # Suporta 2 padrões comuns de tupla:
