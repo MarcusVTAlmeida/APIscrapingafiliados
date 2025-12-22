@@ -22,7 +22,7 @@ def normalize_product(result, url: str):
     Normaliza qualquer retorno (dict | tuple) para o padrão da API
     """
     if isinstance(result, dict):
-            return {
+return {
 "title": result.get("title"),
 "price": result.get("price"),
 "original_value": result.get("original_value"),
