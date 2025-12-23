@@ -43,7 +43,7 @@ async def _scrape_amazon(product_url: str):
                     "url": product_url,
                 }
 
-            # Título
+            # ============ TÍTULO ============
             title = None
             title_el = page.locator("span#productTitle")
             if await title_el.count() > 0:
@@ -52,47 +52,67 @@ async def _scrape_amazon(product_url: str):
             if not title:
                 title = "Título não encontrado"
 
-            # Imagem principal
+            # ============ IMAGEM ============
             image = None
-            img = page.locator("#landingImage")
+            img = page.locator("img#landingImage")
             if await img.count() > 0:
                 image = await img.get_attribute("src")
+                # Pega também data-old-hires (melhor qualidade)
+                if not image or "data:image" in image:
+                    hires = await img.get_attribute("data-old-hires")
+                    if hires:
+                        image = hires
 
-            # Preço atual
+            # ============ PREÇO ATUAL (COM DESCONTO) ============
             price = None
             selectors_price = [
-                "span.a-price span.a-offscreen",
-                "span.priceToPay span.a-offscreen",
+                "span.priceToPay span.a-offscreen",  # Preço principal
+                "span.a-price[data-a-color='base'] span.a-offscreen",  # Fallback
+                "span.a-price span.a-offscreen",  # Fallback genérico
             ]
             for sel in selectors_price:
-                el = page.locator(sel)
+                el = page.locator(sel).first
                 if await el.count() > 0:
-                    txt = await el.first.text_content()
-                    if txt:
+                    txt = await el.text_content()
+                    if txt and txt.strip():
                         price = txt.strip()
                         break
 
-            # Preço antigo
+            # ============ PREÇO ORIGINAL (RISCADO) ============
             old_price = None
-            old = page.locator("span.a-text-price span.a-offscreen")
-            if await old.count() > 0:
-                txt_old = await old.first.text_content()
-                if txt_old:
+            # Seletor específico: <span class="a-price a-text-price" data-a-strike="true">
+            old_selector = 'span.a-price.a-text-price[data-a-strike="true"] span.a-offscreen'
+            old_el = page.locator(old_selector).first
+            if await old_el.count() > 0:
+                txt_old = await old_el.text_content()
+                if txt_old and txt_old.strip():
                     old_price = txt_old.strip()
 
-            # Desconto (quando disponível)
+            # ============ DESCONTO (%) ============
             discount = None
-            disc = page.locator("span.savingsPercentage")
-            if await disc.count() > 0:
-                txt_disc = await disc.first.text_content()
-                if txt_disc:
-                    discount = txt_disc.strip()
+            disc_selectors = [
+                "span.savingsPercentage",
+                "span.savingPriceOverride",
+            ]
+            for sel in disc_selectors:
+                disc_el = page.locator(sel).first
+                if await disc_el.count() > 0:
+                    txt_disc = await disc_el.text_content()
+                    if txt_disc and txt_disc.strip():
+                        discount = txt_disc.strip()
+                        break
 
-            # Monta caption
+            # ============ MONTA CAPTION ============
             caption = f"📦 {title}\n"
-            caption += f"💰 De: {old_price or 'N/A'} | Por: {price or 'N/A'}"
+            if old_price and price:
+                caption += f"💰 De {old_price} por {price}"
+            elif price:
+                caption += f"💰 {price}"
+            else:
+                caption += "💰 Preço não disponível"
+
             if discount:
-                caption += f" | {discount}"
+                caption += f" ({discount})"
             caption += f"\n🔗 {product_url}"
 
             await browser.close()
@@ -112,7 +132,7 @@ async def _scrape_amazon(product_url: str):
                 "title": None,
                 "price": None,
                 "original_value": None,
-                "caption": f"⚠️ Erro ao obter produto Amazon\n{e}",
+                "caption": f"⚠️ Erro ao obter produto Amazon: {str(e)}",
                 "image": None,
                 "url": product_url,
             }
