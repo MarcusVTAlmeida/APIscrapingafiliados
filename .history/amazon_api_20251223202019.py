@@ -10,12 +10,13 @@ USER_AGENTS = [
 
 async def _scrape_amazon(product_url: str):
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-        headless=True,
-        args=[
-            "--disable-blink-features=AutomationControlled",
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
+    browser = await p.chromium.launch(
+headless=True,
+args=[
+"--disable-blink-features=AutomationControlled",
+"--no-sandbox",
+"--disable-dev-shm-usage",
+],
 ],
 )
 

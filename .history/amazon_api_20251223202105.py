@@ -14,8 +14,8 @@ async def _scrape_amazon(product_url: str):
         headless=True,
         args=[
             "--disable-blink-features=AutomationControlled",
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
+"--no-sandbox",
+"--disable-dev-shm-usage",
 ],
 )
 

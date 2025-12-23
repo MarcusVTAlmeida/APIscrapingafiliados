@@ -13,9 +13,9 @@ async def _scrape_amazon(product_url: str):
         browser = await p.chromium.launch(
         headless=True,
         args=[
-            "--disable-blink-features=AutomationControlled",
+                "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
-            "--disable-dev-shm-usage",
+"--disable-dev-shm-usage",
 ],
 )
 
