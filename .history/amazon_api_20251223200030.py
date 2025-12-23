@@ -30,27 +30,20 @@ async def _scrape_amazon(product_url: str):
         try:
             await page.goto(product_url, timeout=90000, wait_until="domcontentloaded")
             await page.wait_for_timeout(random.randint(3500, 5500))
-
             # Se cair em CAPTCHA
             if "captcha" in page.url.lower():
                 await browser.close()
                 return {
-                    "title": None,
-                    "price": None,
-                    "original_value": None,
                     "caption": "🚫 Produto indisponível (bloqueado pela Amazon)",
                     "image": None,
-                    "url": product_url,
+                    "url": product_url
                 }
 
-            # Título
-            title = None
-            title_el = page.locator("span#productTitle")
-            if await title_el.count() > 0:
-                title_text = await title_el.first.text_content()
-                title = title_text.strip() if title_text else None
-            if not title:
-                title = "Título não encontrado"
+            # Título           
+            title = title.strip() if title else "Título não encontrado"
+            title_el = page.locator("span#productTitle").first
+            title = await title_el.text_content()
+
 
             # Imagem principal
             image = None
@@ -58,7 +51,7 @@ async def _scrape_amazon(product_url: str):
             if await img.count() > 0:
                 image = await img.get_attribute("src")
 
-            # Preço atual
+            # Preço
             price = None
             selectors_price = [
                 "span.a-price span.a-offscreen",
@@ -67,28 +60,21 @@ async def _scrape_amazon(product_url: str):
             for sel in selectors_price:
                 el = page.locator(sel)
                 if await el.count() > 0:
-                    txt = await el.first.text_content()
-                    if txt:
-                        price = txt.strip()
-                        break
+                    price = await el.first.text_content()
+                    break
 
             # Preço antigo
             old_price = None
             old = page.locator("span.a-text-price span.a-offscreen")
             if await old.count() > 0:
-                txt_old = await old.first.text_content()
-                if txt_old:
-                    old_price = txt_old.strip()
+                old_price = await old.first.text_content()
 
-            # Desconto (quando disponível)
+            # Desconto
             discount = None
             disc = page.locator("span.savingsPercentage")
             if await disc.count() > 0:
-                txt_disc = await disc.first.text_content()
-                if txt_disc:
-                    discount = txt_disc.strip()
+                discount = await disc.first.text_content()
 
-            # Monta caption
             caption = f"📦 {title}\n"
             caption += f"💰 De: {old_price or 'N/A'} | Por: {price or 'N/A'}"
             if discount:
@@ -98,24 +84,19 @@ async def _scrape_amazon(product_url: str):
             await browser.close()
 
             return {
-                "title": title,
-                "price": price,
-                "original_value": old_price,
                 "caption": caption,
                 "image": image,
-                "url": product_url,
+                "url": product_url
             }
 
         except Exception as e:
             await browser.close()
             return {
-                "title": None,
-                "price": None,
-                "original_value": None,
                 "caption": f"⚠️ Erro ao obter produto Amazon\n{e}",
                 "image": None,
-                "url": product_url,
+                "url": product_url
             }
+
 
 async def get_amazon_product_info(product_url: str):
     return await _scrape_amazon(product_url)
