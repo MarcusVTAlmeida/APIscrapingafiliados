@@ -18,6 +18,7 @@ async def get_product_info(product_url):
         return get_ml_product_info(product_url)
 
     elif "amazon" in url:
+        # aqui chamamos async
         return await get_amazon_product_info(product_url)
 
     else:
