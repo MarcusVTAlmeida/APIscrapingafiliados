@@ -2,40 +2,36 @@ import httpx
 from bs4 import BeautifulSoup
 import re
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-    ),
-    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-}
-
 async def get_amazon_product_info(product_url: str):
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/121.0.0.0 Safari/537.36",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    }
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(product_url, headers=HEADERS, timeout=15)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # Título (usando #title)
+        # Título
         title_tag = soup.find("h1", {"id": "title"})
         title = title_tag.text.strip() if title_tag else "Título não encontrado"
 
-        # Imagens (usando regex, mais robusto)
+        # Imagens
         images = re.findall('"hiRes":"(.+?)"', resp.text)
         image = images[0] if images else None
 
-        # Preço (com desconto, usando .a-price)
+        # Preço
         price_tag = soup.find("span", {"class": "a-price"})
-        price = price_tag.find("span", class_="a-offscreen").text.strip() if price_tag and price_tag.find("span", class_="a-offscreen") else None
+        price = price_tag.find("span", {"class": "a-offscreen"}).text.strip() if price_tag and price_tag.find("span", {"class": "a-offscreen"}) else None
 
-        # Preço antigo (se disponível)
-        old_price = None
+        # Preço antigo
         old_price_tag = soup.find("span", {"class": "a-text-price"})
-        if old_price_tag:
-            old_price = old_price_tag.text.strip()
+        old_price = old_price_tag.text.strip() if old_price_tag else None
 
-        # Monta a mensagem de retorno
+        # Monta caption
         caption = f"📦 {title}\n"
         if old_price and price:
             caption += f"💰 De {old_price} por {price}"
@@ -44,7 +40,7 @@ async def get_amazon_product_info(product_url: str):
         else:
             caption += "💰 Preço não disponível"
 
-        # Retorna os dados no formato esperado
+        # Retorna
         return {
             "title": title,
             "price": price,
@@ -53,7 +49,6 @@ async def get_amazon_product_info(product_url: str):
             "image": image,
             "url": product_url,
         }
-
     except Exception as e:
         return {
             "title": None,
