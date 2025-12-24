@@ -31,8 +31,6 @@ COPY requirements.txt .
 # 4. Instala dependências Python (inclui fastapi, uvicorn, playwright, etc)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 5. Baixa o Chromium para Playwright
-RUN python -m playwright install chromium
 
 # 6. Copia todo o seu código para /app
 COPY . .
