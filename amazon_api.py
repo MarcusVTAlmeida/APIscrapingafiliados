@@ -43,6 +43,9 @@ async def get_amazon_product_info(product_url: str):
             caption += f"💰 {price}"
         else:
             caption += "💰 Preço não disponível"
+            
+            print(resp.text)  # Adicione antes de criar o BeautifulSoup
+        soup = BeautifulSoup(resp.text, 'html.parser')
 
         # Retorna os dados no formato esperado
         return {
@@ -53,6 +56,7 @@ async def get_amazon_product_info(product_url: str):
             "image": image,
             "url": product_url,
         }
+        
 
     except Exception as e:
         return {
@@ -63,3 +67,5 @@ async def get_amazon_product_info(product_url: str):
             "image": None,
             "url": product_url,
         }
+        
+        
