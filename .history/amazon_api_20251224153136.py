@@ -56,7 +56,6 @@ async def get_amazon_product_info(product_url: str):
             "image": image,
             "url": product_url,
         }
-        
 
     except Exception as e:
         return {
