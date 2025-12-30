@@ -38,9 +38,9 @@ def get_shopee_prices_from_html(url):
 
         html = response.text
 
-        # 🔍 Pega o bloco inteiro que contém preços
+        # Captura o bloco que contém os preços
         block_match = re.search(
-            r'<div class="jRlVo0".*?</div>\s*</div>',
+            r'<div class="flex flex-column IFdRIb">.*?</div>',
             html,
             re.DOTALL
         )
@@ -52,18 +52,18 @@ def get_shopee_prices_from_html(url):
 
         # Preço atual
         current_match = re.search(
-            r'<div class="IZPeQz[^"]*">\s*(R\$[\d.,]+)\s*</div>',
+            r'<div class="IZPeQz[^"]*">R\$(\d+,\d+)</div>',
             block
         )
 
         # Preço antigo
         original_match = re.search(
-            r'<div class="ZA5sW5[^"]*">\s*(R\$[\d.,]+)\s*</div>',
+            r'<div class="ZA5sW5"[^>]*>(R\$\d+,\d+)</div>',
             block
         )
 
-        current_price = current_match.group(1) if current_match else None
-        original_price = original_match.group(1) if original_match else None
+        current_price = current_match.group(0).strip() if current_match else None
+        original_price = original_match.group(1).strip() if original_match else None
 
         return current_price, original_price
 
