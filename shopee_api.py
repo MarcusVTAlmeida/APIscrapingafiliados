@@ -20,34 +20,55 @@ def generate_signature(payload, timestamp):
     return hashlib.sha256(factor.encode()).hexdigest()
 
 
-# 🔎 NOVO — buscar preço antigo direto do HTML
-def get_shopee_original_price_from_html(url):
+# 🔎 NOVO — captura preço antigo e atual via HTML (fallback)
+def get_shopee_prices_from_html(url):
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/120.0.0.0 Safari/537.36"
-        )
+        ),
+        "Accept-Language": "pt-BR,pt;q=0.9",
     }
 
     try:
         response = requests.get(url, headers=headers, timeout=15)
         if response.status_code != 200:
-            return None
+            return None, None
 
-        # Classe onde a Shopee exibe o preço antigo
-        match = re.search(
-            r'<div class="ZA5sW5[^"]*">\s*(R\$[\d.,]+)\s*</div>',
-            response.text
+        html = response.text
+
+        # 🔍 Pega o bloco inteiro que contém preços
+        block_match = re.search(
+            r'<div class="jRlVo0".*?</div>\s*</div>',
+            html,
+            re.DOTALL
         )
 
-        if match:
-            return match.group(1)
+        if not block_match:
+            return None, None
+
+        block = block_match.group(0)
+
+        # Preço atual
+        current_match = re.search(
+            r'<div class="IZPeQz[^"]*">\s*(R\$[\d.,]+)\s*</div>',
+            block
+        )
+
+        # Preço antigo
+        original_match = re.search(
+            r'<div class="ZA5sW5[^"]*">\s*(R\$[\d.,]+)\s*</div>',
+            block
+        )
+
+        current_price = current_match.group(1) if current_match else None
+        original_price = original_match.group(1) if original_match else None
+
+        return current_price, original_price
 
     except Exception:
-        pass
-
-    return None
+        return None, None
 
 
 def get_shopee_product_info(product_url):
@@ -99,7 +120,7 @@ def get_shopee_product_info(product_url):
             "url": product_url,
         }
 
-    # 📦 Buscar informações do produto
+    # 📦 Buscar dados do produto
     payload_product = {
         "query": f"""query {{
             productOfferV2(itemId:{item_id}) {{
@@ -144,10 +165,13 @@ def get_shopee_product_info(product_url):
                 original_value = f"R$ {float(max_price):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
                 price_text = f"R$ {float(min_price):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-    # 🔁 NOVO — fallback para pegar preço antigo no HTML
-    html_original_price = get_shopee_original_price_from_html(product_url)
-    if html_original_price:
-        original_value = html_original_price
+    # 🔁 Fallback HTML (NOVO)
+    html_price, html_original = get_shopee_prices_from_html(product_url)
+
+    if html_price:
+        price_text = html_price
+    if html_original:
+        original_value = html_original
 
     # 📝 Caption final
     if original_value and price_text != "Preço indisponível":
