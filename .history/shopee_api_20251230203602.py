@@ -71,6 +71,7 @@ def get_shopee_prices_from_html(url):
         return None, None
 
 
+
 def get_shopee_product_info(product_url):
     item_id = extract_item_id(product_url)
     if not item_id:
