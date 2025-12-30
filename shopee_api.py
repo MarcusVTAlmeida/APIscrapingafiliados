@@ -4,6 +4,7 @@ APP_ID = "18353340769"
 SECRET = "374QPPMAEZPMZRILPQQXKSBEOHCWIHGU"
 API_URL = "https://open-api.affiliate.shopee.com.br/graphql"
 
+
 def extract_item_id(product_url):
     match = re.search(r'-i\.\d+\.(\d+)', product_url)
     if match: 
@@ -13,9 +14,41 @@ def extract_item_id(product_url):
         return match.group(1)
     return None
 
+
 def generate_signature(payload, timestamp):
     factor = f"{APP_ID}{timestamp}{payload}{SECRET}"
     return hashlib.sha256(factor.encode()).hexdigest()
+
+
+# 🔎 NOVO — buscar preço antigo direto do HTML
+def get_shopee_original_price_from_html(url):
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code != 200:
+            return None
+
+        # Classe onde a Shopee exibe o preço antigo
+        match = re.search(
+            r'<div class="ZA5sW5[^"]*">\s*(R\$[\d.,]+)\s*</div>',
+            response.text
+        )
+
+        if match:
+            return match.group(1)
+
+    except Exception:
+        pass
+
+    return None
+
 
 def get_shopee_product_info(product_url):
     item_id = extract_item_id(product_url)
@@ -31,12 +64,21 @@ def get_shopee_product_info(product_url):
 
     timestamp = int(time.time())
 
-    # Gerar link afiliado encurtado
+    # 🔗 Gerar link afiliado
     payload_shortlink = {
-        "query": f"""mutation {{ generateShortLink(input: {{ originUrl: "{product_url}", subIds: ["s1"] }}) {{ shortLink }} }}"""
+        "query": f"""mutation {{
+            generateShortLink(input: {{
+                originUrl: "{product_url}",
+                subIds: ["s1"]
+            }}) {{
+                shortLink
+            }}
+        }}"""
     }
+
     payload_json = json.dumps(payload_shortlink, separators=(",", ":"))
     signature = generate_signature(payload_json, timestamp)
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"SHA256 Credential={APP_ID},Timestamp={timestamp},Signature={signature}",
@@ -57,14 +99,23 @@ def get_shopee_product_info(product_url):
             "url": product_url,
         }
 
-    # Buscar informações do produto
+    # 📦 Buscar informações do produto
     payload_product = {
-        "query": f"""query {{ productOfferV2(itemId:{item_id}) {{
-            nodes {{ productName priceMin priceMax imageUrl }}
-        }} }}"""
+        "query": f"""query {{
+            productOfferV2(itemId:{item_id}) {{
+                nodes {{
+                    productName
+                    priceMin
+                    priceMax
+                    imageUrl
+                }}
+            }}
+        }}"""
     }
+
     payload_json_product = json.dumps(payload_product, separators=(",", ":"))
     signature_product = generate_signature(payload_json_product, timestamp)
+
     headers_product = {
         "Content-Type": "application/json",
         "Authorization": f"SHA256 Credential={APP_ID},Timestamp={timestamp},Signature={signature_product}",
@@ -86,16 +137,19 @@ def get_shopee_product_info(product_url):
         max_price = node.get("priceMax")
         image_url = node.get("imageUrl")
 
-        # Formatar preços
         if min_price and max_price:
-            # Converte string para float e formata como R$ X.XXX,YY
             if min_price == max_price:
                 price_text = f"R$ {float(min_price):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             else:
                 original_value = f"R$ {float(max_price):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
                 price_text = f"R$ {float(min_price):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-    # Monta caption no padrão dos outros
+    # 🔁 NOVO — fallback para pegar preço antigo no HTML
+    html_original_price = get_shopee_original_price_from_html(product_url)
+    if html_original_price:
+        original_value = html_original_price
+
+    # 📝 Caption final
     if original_value and price_text != "Preço indisponível":
         caption = f"📦 {productname}\n💰 De {original_value} por {price_text}\n🔗 {short_link}"
     else:
