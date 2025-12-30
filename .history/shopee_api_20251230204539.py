@@ -1,8 +1,4 @@
-import re
-import time
-import json
-import hashlib
-import requests
+import re, time, json, hashlib, requests
 
 APP_ID = "18353340769"
 SECRET = "374QPPMAEZPMZRILPQQXKSBEOHCWIHGU"
@@ -11,23 +7,21 @@ API_URL = "https://open-api.affiliate.shopee.com.br/graphql"
 
 def extract_item_id(product_url):
     match = re.search(r'-i\.\d+\.(\d+)', product_url)
-    if match:
+    if match: 
         return match.group(1)
     match = re.search(r'/product/\d+/(\d+)', product_url)
-    if match:
+    if match: 
         return match.group(1)
     return None
 
 
-def generate_signature(payload: str, timestamp: int) -> str:
+def generate_signature(payload, timestamp):
     factor = f"{APP_ID}{timestamp}{payload}{SECRET}"
     return hashlib.sha256(factor.encode()).hexdigest()
 
 
+# 🔎 NOVO — captura preço antigo e atual via HTML (fallback)
 def get_shopee_prices_from_html(url):
-    """
-    Fallback: extrai preço atual e preço original (riscado) do HTML da página Shopee.
-    """
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -38,35 +32,37 @@ def get_shopee_prices_from_html(url):
     }
 
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
-        if resp.status_code != 200:
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code != 200:
             return None, None
 
-        html = resp.text
+        html = response.text
 
-        # Captura todo o bloco que contém os preços
+        # Captura o bloco que contém os preços
         block_match = re.search(
-            r'<div\s+class="flex\s+flex-column\s+IFdRIb">.*?</div>\s*</div>',
+            r'<div class="flex flex-column IFdRIb">.*?</div>',
             html,
-            re.DOTALL,
+            re.DOTALL
         )
+
         if not block_match:
             return None, None
 
         block = block_match.group(0)
 
-        # Preço atual (sem desconto)
+        # Preço atual
         current_match = re.search(
-            r'<div\s+class="IZPeQz[^"]*">\s*(R\$[\d.,]+)\s*</div>',
-            block,
-        )
-        # Preço original (riscado)
-        original_match = re.search(
-            r'<div\s+class="ZA5sW5[^"]*">\s*(R\$[\d.,]+)\s*</div>',
-            block,
+            r'<div class="IZPeQz[^"]*">R\$(\d+,\d+)</div>',
+            block
         )
 
-        current_price = current_match.group(1).strip() if current_match else None
+        # Preço antigo
+        original_match = re.search(
+            r'<div class="ZA5sW5"[^>]*>(R\$\d+,\d+)</div>',
+            block
+        )
+
+        current_price = current_match.group(0).strip() if current_match else None
         original_price = original_match.group(1).strip() if original_match else None
 
         return current_price, original_price
@@ -75,7 +71,7 @@ def get_shopee_prices_from_html(url):
         return None, None
 
 
-def get_shopee_product_info(product_url: str) -> dict:
+def get_shopee_product_info(product_url):
     item_id = extract_item_id(product_url)
     if not item_id:
         return {
@@ -88,8 +84,9 @@ def get_shopee_product_info(product_url: str) -> dict:
         }
 
     timestamp = int(time.time())
+    
 
-    # 1) Gera link afiliado
+    # 🔗 Gerar link afiliado
     payload_shortlink = {
         "query": f"""mutation {{
             generateShortLink(input: {{
@@ -100,21 +97,21 @@ def get_shopee_product_info(product_url: str) -> dict:
             }}
         }}"""
     }
+
     payload_json = json.dumps(payload_shortlink, separators=(",", ":"))
     signature = generate_signature(payload_json, timestamp)
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"SHA256 Credential={APP_ID},Timestamp={timestamp},Signature={signature}",
     }
 
-    resp1 = requests.post(API_URL, data=payload_json, headers=headers, timeout=15)
-    data1 = resp1.json()
-    short_link = (
-        data1.get("data", {})
-        .get("generateShortLink", {})
-        .get("shortLink")
-    )
-    if not short_link or data1.get("errors"):
+    response = requests.post(API_URL, data=payload_json, headers=headers, timeout=15)
+    data = response.json()
+
+    short_link = data.get("data", {}).get("generateShortLink", {}).get("shortLink")
+
+    if not short_link or "errors" in data:
         return {
             "title": None,
             "price": None,
@@ -124,7 +121,7 @@ def get_shopee_product_info(product_url: str) -> dict:
             "url": product_url,
         }
 
-    # 2) Busca dados do produto pela API
+    # 📦 Buscar dados do produto
     payload_product = {
         "query": f"""query {{
             productOfferV2(itemId:{item_id}) {{
@@ -137,63 +134,51 @@ def get_shopee_product_info(product_url: str) -> dict:
             }}
         }}"""
     }
-    payload_json2 = json.dumps(payload_product, separators=(",", ":"))
-    signature2 = generate_signature(payload_json2, timestamp)
-    headers2 = {
+
+    payload_json_product = json.dumps(payload_product, separators=(",", ":"))
+    signature_product = generate_signature(payload_json_product, timestamp)
+
+    headers_product = {
         "Content-Type": "application/json",
-        "Authorization": f"SHA256 Credential={APP_ID},Timestamp={timestamp},Signature={signature2}",
+        "Authorization": f"SHA256 Credential={APP_ID},Timestamp={timestamp},Signature={signature_product}",
     }
 
-    resp2 = requests.post(API_URL, data=payload_json2, headers=headers2, timeout=15)
-    data2 = resp2.json()
+    response2 = requests.post(API_URL, data=payload_json_product, headers=headers_product, timeout=15)
+    info_data = response2.json()
 
-    # Variáveis padrão
     productname = "Desconhecido"
     price_text = "Preço indisponível"
-    original_value = None
     image_url = None
+    original_value = None
 
-    nodes = (
-        data2.get("data", {})
-        .get("productOfferV2", {})
-        .get("nodes", [])
-    )
+    nodes = info_data.get("data", {}).get("productOfferV2", {}).get("nodes", [])
     if nodes:
         node = nodes[0]
-        productname = node.get("productName", productname)
+        productname = node.get("productName", "Desconhecido")
         min_price = node.get("priceMin")
         max_price = node.get("priceMax")
         image_url = node.get("imageUrl")
 
-        if min_price is not None and max_price is not None:
-            formatted_min = f"R$ {float(min_price):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            formatted_max = f"R$ {float(max_price):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        if min_price and max_price:
             if min_price == max_price:
-                price_text = formatted_min
+                price_text = f"R$ {float(min_price):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             else:
-                price_text = formatted_min
-                original_value = formatted_max
+                original_value = f"R$ {float(max_price):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                price_text = f"R$ {float(min_price):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-    # 3) Fallback via HTML
+    # 🔁 Fallback HTML (NOVO)
     html_price, html_original = get_shopee_prices_from_html(product_url)
+
     if html_price:
         price_text = html_price
     if html_original:
         original_value = html_original
 
-    # 4) Monta caption final
+    # 📝 Caption final
     if original_value and price_text != "Preço indisponível":
-        caption = (
-            f"📦 {productname}\n"
-            f"💰 De {original_value} por {price_text}\n"
-            f"🔗 {short_link}"
-        )
+        caption = f"📦 {productname}\n💰 De {original_value} por {price_text}\n🔗 {short_link}"
     else:
-        caption = (
-            f"📦 {productname}\n"
-            f"💰 {price_text}\n"
-            f"🔗 {short_link}"
-        )
+        caption = f"📦 {productname}\n💰 {price_text}\n🔗 {short_link}"
 
     return {
         "title": productname,
