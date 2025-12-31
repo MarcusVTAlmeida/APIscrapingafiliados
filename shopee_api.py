@@ -5,6 +5,9 @@ import hashlib
 import requests
 from typing import Tuple, Optional
 
+# PLAYWRIGHT
+from playwright.sync_api import sync_playwright
+
 APP_ID = "18353340769"
 SECRET = "374QPPMAEZPMZRILPQQXKSBEOHCWIHGU"
 API_URL = "https://open-api.affiliate.shopee.com.br/graphql"
@@ -21,11 +24,8 @@ def generate_signature(payload: str, timestamp: int) -> str:
     s = f"{APP_ID}{timestamp}{payload}{SECRET}"
     return hashlib.sha256(s.encode()).hexdigest()
 
-# 2) Scraping puro do HTML da Shopee (título, imagem, preços)
+# 2) Scraping HTML simples (sem JS)
 def scrape_shopee_html(url: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
-    """
-    Retorna: (title, image_url, current_price, original_price)
-    """
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -39,28 +39,50 @@ def scrape_shopee_html(url: str) -> Tuple[Optional[str], Optional[str], Optional
             return None, None, None, None
         html = r.text
 
-        # Título pela tag meta og:title
         m_title = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html)
         title = m_title.group(1).strip() if m_title else None
 
-        # Imagem principal pela tag meta og:image
         m_img = re.search(r'<meta\s+property="og:image"\s+content="([^"]+)"', html)
         image = m_img.group(1).strip() if m_img else None
 
-        # Preço atual: procura por <div> com classe IZPeQz (usando [^>]* para pegar todos atributos)
-        m_curr = re.search(r'<div\s+class="IZPeQz[^>]*">\s*(R\$[\d.,]+)\s*</div>', html, re.DOTALL)
-        current_price = m_curr.group(1).strip() if m_curr else None
+        m_curr = re.search(r'R\$\s?\d+[,\.]\d{2}', html)
+        current_price = m_curr.group(0) if m_curr else None
 
-        # Preço original riscado: procura por <div> com classe ZA5sW5.
-        m_orig = re.search(r'<div\s+class="ZA5sW5[^>]*">\s*(R\$[\d.,]+)\s*</div>', html, re.DOTALL)
-        original_price = m_orig.group(1).strip() if m_orig else None
-
-        return title, image, current_price, original_price
-
+        return title, image, current_price, None
     except Exception:
         return None, None, None, None
 
-# 3) Função principal
+# 3) Scraping com Playwright (JS executado)
+def scrape_shopee_playwright(url: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(locale="pt-BR")
+            page.goto(url, timeout=30000)
+
+            # Aguarda preço aparecer
+            page.wait_for_timeout(4000)
+
+            title = page.locator('meta[property="og:title"]').get_attribute("content")
+            image = page.locator('meta[property="og:image"]').get_attribute("content")
+
+            # Captura preços visíveis no DOM
+            prices = page.locator("text=/R\\$\\s?\\d+/").all_inner_texts()
+
+            browser.close()
+
+            if prices:
+                current_price = prices[0]
+                original_price = prices[1] if len(prices) > 1 else None
+            else:
+                current_price = None
+                original_price = None
+
+            return title, image, current_price, original_price
+    except Exception:
+        return None, None, None, None
+
+# 4) Função principal
 def get_shopee_product_info(product_url: str) -> dict:
     item_id = extract_item_id(product_url)
     if not item_id:
@@ -74,9 +96,9 @@ def get_shopee_product_info(product_url: str) -> dict:
         }
 
     timestamp = int(time.time())
-    short_link = product_url  # fallback
+    short_link = product_url
 
-    # Tenta gerar short_link via GraphQL
+    # Short link
     try:
         payload1 = {"query": f"""
             mutation {{
@@ -95,18 +117,12 @@ def get_shopee_product_info(product_url: str) -> dict:
             "Authorization": f"SHA256 Credential={APP_ID},Timestamp={timestamp},Signature={sig1}"
         }
         resp1 = requests.post(API_URL, data=pj1, headers=h1, timeout=15)
-        j1 = resp1.json()
-        sl = j1.get("data", {}).get("generateShortLink", {}).get("shortLink")
-        if sl:
-            short_link = sl
+        short_link = resp1.json()["data"]["generateShortLink"]["shortLink"]
     except Exception:
-        short_link = product_url
+        pass
 
-    # Tenta buscar dados do produto via API
-    productname = None
-    price_api = None
-    original_api = None
-    image_api = None
+    # API produto
+    productname = price_api = original_api = image_api = None
     try:
         payload2 = {"query": f"""
           query {{
@@ -127,35 +143,32 @@ def get_shopee_product_info(product_url: str) -> dict:
             "Authorization": f"SHA256 Credential={APP_ID},Timestamp={timestamp},Signature={sig2}"
         }
         resp2 = requests.post(API_URL, data=pj2, headers=h2, timeout=15)
-        j2 = resp2.json()
-        nodes = j2.get("data", {}).get("productOfferV2", {}).get("nodes") or []
+        nodes = resp2.json()["data"]["productOfferV2"]["nodes"]
         if nodes:
             n = nodes[0]
-            productname = n.get("productName")
-            priceMin = n.get("priceMin")
-            priceMax = n.get("priceMax")
-            image_api = n.get("imageUrl")
-            if priceMin is not None:
-                price_api = f"R$ {float(priceMin):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            if priceMax is not None and priceMax != priceMin:
-                original_api = f"R$ {float(priceMax):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            productname = n["productName"]
+            image_api = n["imageUrl"]
+            price_api = f"R$ {float(n['priceMin']):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            if n["priceMax"] != n["priceMin"]:
+                original_api = f"R$ {float(n['priceMax']):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except Exception:
         pass
 
-    # Fallback via scraping do HTML
+    # HTML simples
     title_html, image_html, curr_html, orig_html = scrape_shopee_html(product_url)
 
-    # Prioriza API > HTML
-    title = productname or title_html or "Desconhecido"
-    image = image_api or image_html
-    price = price_api or curr_html or "Preço indisponível"
-    original = original_api or orig_html
+    # Playwright (último fallback)
+    title_pw, image_pw, curr_pw, orig_pw = scrape_shopee_playwright(product_url)
 
-    # Monta caption final
-    if original and price != "Preço indisponível":
+    # Prioridade final
+    title = productname or title_html or title_pw or "Desconhecido"
+    image = image_api or image_html or image_pw
+    price = price_api or curr_html or curr_pw or "Preço indisponível"
+    original = original_api or orig_html or orig_pw
+
+    caption = f"📦 {title}\n💰 {price}\n🔗 {short_link}"
+    if original:
         caption = f"📦 {title}\n💰 De {original} por {price}\n🔗 {short_link}"
-    else:
-        caption = f"📦 {title}\n💰 {price}\n🔗 {short_link}"
 
     return {
         "title": title,
