@@ -56,31 +56,57 @@ def scrape_shopee_html(url: str) -> Tuple[Optional[str], Optional[str], Optional
 def scrape_shopee_playwright(url: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(locale="pt-BR")
-            page.goto(url, timeout=30000)
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                ],
+            )
 
-            # Aguarda preço aparecer
-            page.wait_for_timeout(4000)
+            page = browser.new_page(
+                locale="pt-BR",
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+            )
 
+            page.goto(url, timeout=60000, wait_until="domcontentloaded")
+
+            # Aguarda o bloco de preço principal
+            page.wait_for_selector("div.jRlVo0", timeout=15000)
+
+            # Meta informações
             title = page.locator('meta[property="og:title"]').get_attribute("content")
             image = page.locator('meta[property="og:image"]').get_attribute("content")
 
-            # Captura preços visíveis no DOM
-            prices = page.locator("text=/R\\$\\s?\\d+/").all_inner_texts()
+            current_price = None
+            original_price = None
+
+            # Preço atual (classe mais estável)
+            if page.locator("div.IZPeQz").count() > 0:
+                current_price = page.locator("div.IZPeQz").first.inner_text().strip()
+
+            # Preço riscado (classe mais estável)
+            if page.locator("div.ZA5sW5").count() > 0:
+                original_price = page.locator("div.ZA5sW5").first.inner_text().strip()
+
+            # Fallback extra (caso Shopee mude classes)
+            if not current_price:
+                prices = page.locator("text=/R\\$\\s?\\d+/").all_inner_texts()
+                if prices:
+                    current_price = prices[0]
 
             browser.close()
 
-            if prices:
-                current_price = prices[0]
-                original_price = prices[1] if len(prices) > 1 else None
-            else:
-                current_price = None
-                original_price = None
-
             return title, image, current_price, original_price
+
     except Exception:
         return None, None, None, None
+
 
 # 4) Função principal
 def get_shopee_product_info(product_url: str) -> dict:
