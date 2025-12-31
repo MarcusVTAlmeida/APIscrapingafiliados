@@ -26,7 +26,8 @@ def generate_signature(payload: str, timestamp: int) -> str:
 
 def get_shopee_prices_from_html(url):
     """
-    Fallback: extrai preço atual e preço original (riscado) do HTML da página Shopee.
+    Fallback: Extrai o preço atual e o preço original (riscado) do HTML da página da Shopee.
+    Busca em todo o HTML os elementos que contenham os preços.
     """
     headers = {
         "User-Agent": (
@@ -38,32 +39,24 @@ def get_shopee_prices_from_html(url):
     }
 
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
-        if resp.status_code != 200:
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code != 200:
             return None, None
 
-        html = resp.text
+        html = response.text
 
-        # Captura todo o bloco que contém os preços
-        block_match = re.search(
-            r'<div\s+class="flex\s+flex-column\s+IFdRIb">.*?</div>\s*</div>',
+        # Preço atual: procura por um <div> com classe IZPeQz
+        current_match = re.search(
+            r'<div\s+class="IZPeQz[^>]*">\s*(R\$[\d.,]+)\s*</div>',
             html,
             re.DOTALL,
         )
-        if not block_match:
-            return None, None
 
-        block = block_match.group(0)
-
-        # Preço atual (sem desconto)
-        current_match = re.search(
-            r'<div\s+class="IZPeQz[^"]*">\s*(R\$[\d.,]+)\s*</div>',
-            block,
-        )
-        # Preço original (riscado)
+        # Preço original (riscado): procura por um <div> com classe ZA5sW5
         original_match = re.search(
-            r'<div\s+class="ZA5sW5[^"]*">\s*(R\$[\d.,]+)\s*</div>',
-            block,
+            r'<div\s+class="ZA5sW5"[^>]*>\s*(R\$[\d.,]+)\s*</div>',
+            html,
+            re.DOTALL,
         )
 
         current_price = current_match.group(1).strip() if current_match else None
@@ -71,7 +64,8 @@ def get_shopee_prices_from_html(url):
 
         return current_price, original_price
 
-    except Exception:
+    except Exception as e:
+        # Se houver erro, retorne None para ambos
         return None, None
 
 
@@ -183,17 +177,9 @@ def get_shopee_product_info(product_url: str) -> dict:
 
     # 4) Monta caption final
     if original_value and price_text != "Preço indisponível":
-        caption = (
-            f"📦 {productname}\n"
-            f"💰 De {original_value} por {price_text}\n"
-            f"🔗 {short_link}"
-        )
+        caption = f"📦 {productname}\n💰 De {original_value} por {price_text}\n🔗 {short_link}"
     else:
-        caption = (
-            f"📦 {productname}\n"
-            f"💰 {price_text}\n"
-            f"🔗 {short_link}"
-        )
+        caption = f"📦 {productname}\n💰 {price_text}\n🔗 {short_link}"
 
     return {
         "title": productname,
