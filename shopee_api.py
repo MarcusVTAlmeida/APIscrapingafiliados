@@ -39,20 +39,20 @@ def scrape_shopee_html(url: str) -> Tuple[Optional[str], Optional[str], Optional
             return None, None, None, None
         html = r.text
 
-        # título pela meta tag og:title
+        # Título pela tag meta og:title
         m_title = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html)
         title = m_title.group(1).strip() if m_title else None
 
-        # imagem principal pela meta tag og:image
+        # Imagem principal pela tag meta og:image
         m_img = re.search(r'<meta\s+property="og:image"\s+content="([^"]+)"', html)
         image = m_img.group(1).strip() if m_img else None
 
-        # preço atual: classe IZPeQz
-        m_curr = re.search(r'<div\s+class="IZPeQz[^"]*">\s*(R\$[\d.,]+)\s*</div>', html)
+        # Preço atual: procura por <div> com classe IZPeQz (usando [^>]* para pegar todos atributos)
+        m_curr = re.search(r'<div\s+class="IZPeQz[^>]*">\s*(R\$[\d.,]+)\s*</div>', html, re.DOTALL)
         current_price = m_curr.group(1).strip() if m_curr else None
 
-        # preço original riscado: classe ZA5sW5
-        m_orig = re.search(r'<div\s+class="ZA5sW5[^"]*">\s*(R\$[\d.,]+)\s*</div>', html)
+        # Preço original riscado: procura por <div> com classe ZA5sW5.
+        m_orig = re.search(r'<div\s+class="ZA5sW5[^>]*">\s*(R\$[\d.,]+)\s*</div>', html, re.DOTALL)
         original_price = m_orig.group(1).strip() if m_orig else None
 
         return title, image, current_price, original_price
@@ -74,7 +74,7 @@ def get_shopee_product_info(product_url: str) -> dict:
         }
 
     timestamp = int(time.time())
-    short_link = product_url  # default fallback
+    short_link = product_url  # fallback
 
     # Tenta gerar short_link via GraphQL
     try:
@@ -100,10 +100,9 @@ def get_shopee_product_info(product_url: str) -> dict:
         if sl:
             short_link = sl
     except Exception:
-        # qualquer erro, fallback para URL original
         short_link = product_url
 
-    # Tenta buscar via API
+    # Tenta buscar dados do produto via API
     productname = None
     price_api = None
     original_api = None
@@ -143,7 +142,7 @@ def get_shopee_product_info(product_url: str) -> dict:
     except Exception:
         pass
 
-    # Scraping do HTML (sempre tenta)
+    # Fallback via scraping do HTML
     title_html, image_html, curr_html, orig_html = scrape_shopee_html(product_url)
 
     # Prioriza API > HTML
@@ -152,7 +151,7 @@ def get_shopee_product_info(product_url: str) -> dict:
     price = price_api or curr_html or "Preço indisponível"
     original = original_api or orig_html
 
-    # Monta caption
+    # Monta caption final
     if original and price != "Preço indisponível":
         caption = f"📦 {title}\n💰 De {original} por {price}\n🔗 {short_link}"
     else:
