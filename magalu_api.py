@@ -2,6 +2,8 @@ import re
 import requests
 from bs4 import BeautifulSoup
 import random
+import time
+from playwright.sync_api import sync_playwright
 
 MAGALU_STORE = "in_603815"
 
@@ -19,17 +21,14 @@ LEGENDAS = [
 ]
 
 def gerar_legenda():
-    """Retorna uma legenda aleatória da lista."""
     return random.choice(LEGENDAS)
 
 def format_magalu_store(store_id: str) -> str:
-    """Formata o ID da loja para o padrão 'in_XXXXXX'."""
     if not store_id.startswith("in_"):
         return store_id[:2] + "_" + store_id[2:]
     return store_id
 
 def encurtar_link(url: str) -> str:
-    """Encurta o link usando a API gratuita encurtador.dev."""
     try:
         api_url = "https://api.encurtador.dev/encurtamentos"
         headers = {"Content-Type": "application/json"}
@@ -42,19 +41,45 @@ def encurtar_link(url: str) -> str:
             if "urlEncurtada" in result:
                 return result["urlEncurtada"]
 
-        print(f"⚠️ Erro ao encurtar link: {resp.status_code} -> {resp.text}")
     except Exception as e:
         print(f"⚠️ Erro ao encurtar link: {e}")
 
-    return url  # fallback: retorna o link original se der erro
+    return url
 
 
+# =========================================================
+# PLAYWRIGHT – FALLBACK CONTRA BLOQUEIO / HTML INCOMPLETO
+# =========================================================
+def get_html_with_playwright(url: str) -> str:
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"]
+        )
+        context = browser.new_context(
+            locale="pt-BR",
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/121.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 800},
+        )
+        page = context.new_page()
+        page.goto(url, wait_until="networkidle", timeout=60000)
+        time.sleep(2)
+        html = page.content()
+        browser.close()
+        return html
+
+
+# =========================================================
+# FUNÇÃO PRINCIPAL
+# =========================================================
 def get_magalu_product_info(product_url):
-    """Busca informações de um produto no Magazine Luiza e retorna um dicionário estruturado."""
     try:
         loja_corrigida = format_magalu_store(MAGALU_STORE)
-        
-        # Corrige link para afiliado
+
         if "magazinevoce.com.br" in product_url:
             affiliate_link = product_url
         else:
@@ -62,12 +87,32 @@ def get_magalu_product_info(product_url):
             affiliate_link = f"https://www.magazinevoce.com.br/magazine{loja_corrigida}{path}"
 
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8"
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/121.0.0.0 Safari/537.36"
+            ),
+            "Accept": (
+                "text/html,application/xhtml+xml,application/xml;"
+                "q=0.9,image/avif,image/webp,*/*;q=0.8"
+            ),
+            "Accept-Language": "pt-BR,pt;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Referer": "https://www.google.com/",
         }
+
         resp = requests.get(affiliate_link, headers=headers, timeout=15)
         resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
+        html = resp.text
+
+        # 🔍 DETECTA HTML SUSPEITO (Render / Datacenter)
+        if "R$" not in html or "price" not in html.lower():
+            print("⚠️ HTML incompleto via requests → usando Playwright")
+            html = get_html_with_playwright(affiliate_link)
+
+        soup = BeautifulSoup(html, "html.parser")
 
         info = {
             "name": "Produto Magalu",
@@ -89,9 +134,8 @@ def get_magalu_product_info(product_url):
         tag_title = soup.find("meta", property="og:title")
         if tag_title:
             name = tag_title.get("content", "").strip()
-            # 🧹 LIMPA O TÍTULO
-            name = re.sub(r"\s*-\s*Magazine.*", "", name, flags=re.IGNORECASE)
-            name = re.sub(r"\s*-\s*Magalu.*", "", name, flags=re.IGNORECASE)
+            name = re.sub(r"\s*-\s*Magazine.*", "", name, flags=re.I)
+            name = re.sub(r"\s*-\s*Magalu.*", "", name, flags=re.I)
             info["name"] = name
 
         tag_image = soup.find("meta", property="og:image")
@@ -99,46 +143,33 @@ def get_magalu_product_info(product_url):
             info["image"] = tag_image.get("content")
 
         # -------------------
-        # PREÇO ORIGINAL (riscado)
+        # PREÇO ORIGINAL
         # -------------------
         price_default = soup.find("div", {"data-testid": "price-default"})
         if price_default:
             orig_tag = (
                 price_default.find("p", {"data-testid": "price-original"})
                 or price_default.find("span", {"data-testid": "price-original"})
-                or price_default.find("p", {"data-testid": "price-strikethrough"})
-                or price_default.find("span", {"data-testid": "price-strikethrough"})
-                or price_default.find("p", {"data-testid": "price-before"})
-                or price_default.find("span", {"data-testid": "price-before"})
                 or price_default.find("s")
-                or price_default.find("span", string=re.compile(r"De:\s*R\$"))
             )
             if orig_tag:
                 info["price_original"] = orig_tag.get_text(strip=True)
-
-        # Caso ainda não tenha encontrado, busca globalmente por "De: R$"
-        if not info["price_original"]:
-            riscado = soup.find(string=re.compile(r"De:\s*R\$"))
-            if riscado:
-                info["price_original"] = riscado.strip()
 
         # -------------------
         # PIX
         # -------------------
         pix_panel = soup.find("div", {"data-testid": "pix-panel"})
         if pix_panel:
-            price_elem = pix_panel.find(lambda tag: tag.name in ['p', 'span'] and 'R$' in tag.get_text())
+            price_elem = pix_panel.find(lambda tag: tag.name in ["p", "span"] and "R$" in tag.get_text())
             if price_elem:
-                info["price_pix"] = re.sub(r'^\s*ou\s*', '', price_elem.get_text(" ", strip=True), flags=re.I)
+                info["price_pix"] = re.sub(
+                    r'^\s*ou\s*', '', price_elem.get_text(" ", strip=True), flags=re.I
+                )
 
             discount_text = pix_panel.get_text(" ", strip=True)
-            match = re.search(r'(\d+\s*%[^R$]{0,40}PIX)', discount_text, re.I)
-            if match:
-                info["pix_discount"] = match.group(1).strip()
-            else:
-                perc = re.search(r'(\d+\s*%)', discount_text)
-                if perc:
-                    info["pix_discount"] = f"{perc.group(1)} de desconto No PIX"
+            perc = re.search(r'(\d+\s*%)', discount_text)
+            if perc:
+                info["pix_discount"] = f"{perc.group(1)} de desconto no PIX"
 
             pix_method_tag = pix_panel.find(attrs={"data-testid": "in-cash"})
             if pix_method_tag:
@@ -147,91 +178,46 @@ def get_magalu_product_info(product_url):
         # -------------------
         # CARTÃO
         # -------------------
-        card_panel = (
-            soup.find("div", {"data-testid": "mod-bestinstallment"})
-            or soup.find("div", {"data-testid": "best-installment"})
-            or soup.find("div", {"data-testid": "credit-card-panel"})
-            or soup.find("div", {"data-testid": "card-panel"})
-        )
-
+        card_panel = soup.find("div", {"data-testid": "mod-bestinstallment"})
         if card_panel:
-            total_price_tag = (
-                card_panel.find("p", {"data-testid": "price-value"})
-                or card_panel.find("span", {"data-testid": "price-value"})
-                or card_panel.find("p", string=re.compile(r"R\$"))
-                or card_panel.find("span", string=re.compile(r"R\$"))
-            )
+            total_price_tag = card_panel.find(string=re.compile(r"R\$"))
             if total_price_tag:
-                info["card_total"] = total_price_tag.get_text(strip=True)
+                info["card_total"] = total_price_tag.strip()
 
-            installment_tag = (
-                card_panel.find("p", {"data-testid": "installment"})
-                or card_panel.find("span", {"data-testid": "installment"})
-                or card_panel.find(string=re.compile(r"x R\$"))
-            )
+            installment_tag = card_panel.find(string=re.compile(r"\d+x\s*de\s*R\$"))
             if installment_tag:
-                info["card_installments"] = (
-                    installment_tag.get_text(strip=True)
-                    if hasattr(installment_tag, "get_text")
-                    else installment_tag.strip()
-                )
-
-        if not info["card_installments"]:
-            global_installment = soup.find(string=re.compile(r"\d+x\s*de\s*R\$"))
-            if global_installment:
-                info["card_installments"] = global_installment.strip()
-
-        if not info["card_total"]:
-            global_total = soup.find(string=re.compile(r"R\$\s*\d+,\d{2}"))
-            if global_total:
-                info["card_total"] = global_total.strip()
+                info["card_installments"] = installment_tag.strip()
 
         # -------------------
-        # CAPTION FINAL (formato limpo e padronizado)
+        # CAPTION FINAL
         # -------------------
-        nome = info["name"]
-        preco_de = info["price_original"]
-        preco_pix = info["price_pix"]
-        desconto = info["pix_discount"]
-        preco_cartao = info["card_total"]
-        parcelas = info["card_installments"]
-
-        # 🔗 Encurta link automaticamente
         short_link = encurtar_link(info["link"])
 
-        caption = f"📦 {nome}\n"
+        caption = f"📦 {info['name']}\n"
 
-        # 💰 Se tiver valor original e PIX
-        if preco_de and preco_pix:
-            caption += f"💰 De: {preco_de} | Por: {preco_pix}"
-            if desconto:
-                caption += f" | {desconto}"
-        elif preco_pix:
-            caption += f"💰 {preco_pix}"
-            if desconto:
-                caption += f" | {desconto}"
+        if info["price_original"] and info["price_pix"]:
+            caption += f"💰 De: {info['price_original']} | Por: {info['price_pix']}"
+            if info["pix_discount"]:
+                caption += f" | {info['pix_discount']}"
+        elif info["price_pix"]:
+            caption += f"💰 {info['price_pix']}"
 
-        # 💳 Cartão
-        if preco_cartao and parcelas:
-            caption += f"\n💳 {preco_cartao} ({parcelas}) no cartão"
-        elif preco_cartao:
-            caption += f"\n💳 {preco_cartao} no cartão"
-        elif parcelas:
-            caption += f"\n💳 ({parcelas}) no cartão"
+        if info["card_total"] and info["card_installments"]:
+            caption += f"\n💳 {info['card_total']} ({info['card_installments']}) no cartão"
 
         caption += f"\n🔗 {short_link}"
 
-        info["caption"] = caption.strip()
-        info["link"] = short_link  # também atualiza o link encurtado no dict
+        info["caption"] = caption
+        info["link"] = short_link
+
         return info
 
-
     except Exception as e:
-        print(f"Erro ao processar link da Magalu: {e}")
+        print(f"❌ Erro Magalu: {e}")
         return {
             "name": "Produto Magalu",
             "price_text": "Preço indisponível",
             "link": product_url,
             "image": None,
-            "legend": "😕 Ops, não consegui ver os detalhes.",
+            "legend": "😕 Não foi possível carregar os dados.",
         }
