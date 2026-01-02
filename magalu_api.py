@@ -1,10 +1,13 @@
 import re
+import requests
+from bs4 import BeautifulSoup
 import random
-from playwright.async_api import async_playwright
-from urllib.parse import urlparse, urlunparse
 
 MAGALU_STORE = "in_603815"
 
+# -------------------
+# Legendas prontas
+# -------------------
 LEGENDAS = [
     "🔥 Aproveite essa oferta incrível!",
     "✨ Promoção imperdível no Magalu!",
@@ -23,86 +26,107 @@ def format_magalu_store(store_id: str) -> str:
         return store_id[:2] + "_" + store_id[2:]
     return store_id
 
-def limpar_url(url: str) -> str:
-    p = urlparse(url)
-    return urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
-
-# 🔥 AGORA É ASYNC
-async def get_magalu_product_info(product_url: str) -> dict | None:
+def encurtar_link(url: str) -> str:
     try:
-        loja = format_magalu_store(MAGALU_STORE)
+        api_url = "https://api.encurtador.dev/encurtamentos"
+        resp = requests.post(
+            api_url,
+            json={"url": url},
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+        if resp.status_code in (200, 201):
+            return resp.json().get("urlEncurtada", url)
+    except Exception:
+        pass
+    return url
+
+
+def get_magalu_product_info(product_url: str) -> dict:
+    try:
+        loja_corrigida = format_magalu_store(MAGALU_STORE)
 
         if "magazinevoce.com.br" in product_url:
-            affiliate_link = limpar_url(product_url)
+            affiliate_link = product_url
         else:
             path = re.sub(r"https?://www\.magazineluiza\.com\.br", "", product_url)
-            affiliate_link = f"https://www.magazinevoce.com.br/magazine{loja}{path}"
-            affiliate_link = limpar_url(affiliate_link)
+            affiliate_link = f"https://www.magazinevoce.com.br/magazine{loja_corrigida}{path}"
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                ],
-            )
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Accept-Language": "pt-BR,pt;q=0.9",
+        }
 
-            context = await browser.new_context(
-                locale="pt-BR",
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/121.0.0.0 Safari/537.36"
-                ),
-            )
-
-            page = await context.new_page()
-            await page.goto(affiliate_link, wait_until="networkidle", timeout=60000)
-
-            # 🚨 DETECTA BLOQUEIO
-            if "az-request-verify" in page.url:
-                raise Exception("Bloqueio anti-bot da Magalu")
-
-            html = await page.content()
-            await browser.close()
-
-        # -------------------
-        # EXTRAÇÃO
-        # -------------------
-        def find(pattern):
-            m = re.search(pattern, html, re.I | re.S)
-            return m.group(1).strip() if m else None
+        resp = requests.get(affiliate_link, headers=headers, timeout=20)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
 
         info = {
-            "name": None,
+            "name": "Produto Magalu",
             "image": None,
             "link": affiliate_link,
             "legend": gerar_legenda(),
             "price_original": None,
             "price_pix": None,
             "pix_discount": None,
-            "pix_method": "no Pix",
+            "pix_method": None,
             "card_total": None,
             "card_installments": None,
             "caption": None,
         }
 
-        info["name"] = find(r'property="og:title"\s+content="([^"]+)"')
-        if info["name"]:
-            info["name"] = re.sub(r"\s*-\s*(Magazine|Magalu).*", "", info["name"], flags=re.I)
+        # -------------------
+        # NOME E IMAGEM
+        # -------------------
+        if (t := soup.find("meta", property="og:title")):
+            info["name"] = re.sub(
+                r"\s*-\s*(Magazine|Magalu).*",
+                "",
+                t.get("content", "").strip(),
+                flags=re.I,
+            )
 
-        info["image"] = find(r'property="og:image"\s+content="([^"]+)"')
-
-        info["price_original"] = find(r'data-testid="price-original".*?>\s*(R\$[^<]+)')
-        info["price_pix"] = find(r'data-testid="price-value".*?>.*?(R\$[^<]+)')
-        info["pix_discount"] = find(r'(\d+% de desconto no pix)')
-        info["card_installments"] = find(r'(\d+x de R\$[^<]+)')
+        if (img := soup.find("meta", property="og:image")):
+            info["image"] = img.get("content")
 
         # -------------------
-        # CAPTION
+        # BLOCO DE PREÇO (REAL ATUAL)
         # -------------------
+        price_default = soup.find("div", {"data-testid": "price-default"})
+
+        if price_default:
+            # Preço original (riscado)
+            if (orig := price_default.find("p", {"data-testid": "price-original"})):
+                info["price_original"] = orig.get_text(strip=True)
+
+            # Preço Pix
+            if (pix := price_default.find("p", {"data-testid": "price-value"})):
+                info["price_pix"] = pix.get_text(" ", strip=True).replace("ou ", "")
+
+            # Método Pix
+            if (pix_m := price_default.find("span", {"data-testid": "in-cash"})):
+                info["pix_method"] = pix_m.get_text(strip=True)
+
+            # Desconto Pix
+            if (disc := price_default.find("span", string=re.compile(r"%.*pix", re.I))):
+                info["pix_discount"] = disc.get_text(strip=True)
+
+            # Parcelamento
+            if (inst := price_default.find("p", {"data-testid": "installment"})):
+                info["card_installments"] = inst.get_text(strip=True)
+
+        # Total cartão (fallback)
+        if not info["card_total"]:
+            if (card := soup.find("div", {"data-testid": "mod-bestinstallment"})):
+                if (v := card.find(string=re.compile(r"R\$\s*\d+,\d{2}"))):
+                    info["card_total"] = v.strip()
+
+        # -------------------
+        # CAPTION FINAL
+        # -------------------
+        short_link = encurtar_link(info["link"])
+        info["link"] = short_link
+
         caption = f"📦 {info['name']}\n"
 
         if info["price_original"] and info["price_pix"]:
@@ -112,14 +136,16 @@ async def get_magalu_product_info(product_url: str) -> dict | None:
         elif info["price_pix"]:
             caption += f"💰 {info['price_pix']}"
 
-        if info["card_installments"]:
-            caption += f"\n💳 {info['card_installments']} no cartão"
+        if info["card_total"] and info["card_installments"]:
+            caption += f"\n💳 {info['card_total']} ({info['card_installments']})"
+        elif info["card_installments"]:
+            caption += f"\n💳 {info['card_installments']}"
 
-        caption += f"\n🔗 {affiliate_link}"
-
+        caption += f"\n🔗 {short_link}"
         info["caption"] = caption.strip()
+
         return info
 
     except Exception as e:
-        print("❌ Magalu Playwright:", e)
+        print("❌ Erro Magalu:", e)
         return None
