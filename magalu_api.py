@@ -28,9 +28,8 @@ def format_magalu_store(store_id: str) -> str:
 
 def encurtar_link(url: str) -> str:
     try:
-        api_url = "https://api.encurtador.dev/encurtamentos"
         resp = requests.post(
-            api_url,
+            "https://api.encurtador.dev/encurtamentos",
             json={"url": url},
             headers={"Content-Type": "application/json"},
             timeout=10,
@@ -53,11 +52,15 @@ def get_magalu_product_info(product_url: str) -> dict:
             affiliate_link = f"https://www.magazinevoce.com.br/magazine{loja_corrigida}{path}"
 
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
             "Accept-Language": "pt-BR,pt;q=0.9",
         }
 
-        resp = requests.get(affiliate_link, headers=headers, timeout=20)
+        resp = requests.get(affiliate_link, headers=headers, timeout=25)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -90,36 +93,39 @@ def get_magalu_product_info(product_url: str) -> dict:
             info["image"] = img.get("content")
 
         # -------------------
-        # BLOCO DE PREÇO (REAL ATUAL)
+        # BLOCO DE PREÇO REAL
         # -------------------
         price_default = soup.find("div", {"data-testid": "price-default"})
 
         if price_default:
-            # Preço original (riscado)
+            # Preço original riscado
             if (orig := price_default.find("p", {"data-testid": "price-original"})):
                 info["price_original"] = orig.get_text(strip=True)
 
-            # Preço Pix
+            # Preço Pix (principal)
             if (pix := price_default.find("p", {"data-testid": "price-value"})):
                 info["price_pix"] = pix.get_text(" ", strip=True).replace("ou ", "")
 
-            # Método Pix
+            # Texto "no Pix"
             if (pix_m := price_default.find("span", {"data-testid": "in-cash"})):
                 info["pix_method"] = pix_m.get_text(strip=True)
 
             # Desconto Pix
-            if (disc := price_default.find("span", string=re.compile(r"%.*pix", re.I))):
+            if (disc := price_default.find("span", class_=re.compile("sc-faUjhM"))):
                 info["pix_discount"] = disc.get_text(strip=True)
 
             # Parcelamento
             if (inst := price_default.find("p", {"data-testid": "installment"})):
                 info["card_installments"] = inst.get_text(strip=True)
 
-        # Total cartão (fallback)
+        # -------------------
+        # TOTAL CARTÃO (fallback)
+        # -------------------
         if not info["card_total"]:
             if (card := soup.find("div", {"data-testid": "mod-bestinstallment"})):
-                if (v := card.find(string=re.compile(r"R\$\s*\d+,\d{2}"))):
-                    info["card_total"] = v.strip()
+                valores = card.find_all(string=re.compile(r"R\$\s*\d+[\.,]\d{2}"))
+                if valores:
+                    info["card_total"] = valores[0].strip()
 
         # -------------------
         # CAPTION FINAL
@@ -132,16 +138,15 @@ def get_magalu_product_info(product_url: str) -> dict:
         if info["price_original"] and info["price_pix"]:
             caption += f"💰 De: {info['price_original']} | Por: {info['price_pix']}"
             if info["pix_discount"]:
-                caption += f" | {info['pix_discount']}"
+                caption += f" {info['pix_discount']}"
         elif info["price_pix"]:
             caption += f"💰 {info['price_pix']}"
 
-        if info["card_total"] and info["card_installments"]:
-            caption += f"\n💳 {info['card_total']} ({info['card_installments']})"
-        elif info["card_installments"]:
+        if info["card_installments"]:
             caption += f"\n💳 {info['card_installments']}"
 
         caption += f"\n🔗 {short_link}"
+
         info["caption"] = caption.strip()
 
         return info
