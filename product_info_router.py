@@ -1,24 +1,21 @@
-# product_info_router.py
-
-from shopee_api import get_shopee_product_info
 from magalu_api import get_magalu_product_info
+from shopee_api import get_shopee_product_info
 from ml_api import get_ml_product_info
 from amazon_api import get_amazon_product_info
 
-async def get_product_info(product_url):
-    url = product_url.lower()
+def get_product_info(url: str):
+    url = url.lower()
+
+    if "magazineluiza" in url or "magazinevoce" in url:
+        return get_magalu_product_info(url)
 
     if "shopee" in url:
-        return get_shopee_product_info(product_url)
+        return get_shopee_product_info(url)
 
-    elif "magazineluiza" in url or "magalu" in url:
-        return get_magalu_product_info(product_url)
+    if "mercado" in url:
+        return get_ml_product_info(url)
 
-    elif "mercadolivre" in url or "mercado-livre" in url:
-        return get_ml_product_info(product_url)
+    if "amazon" in url:
+        return get_amazon_product_info(url)
 
-    elif "amazon" in url:
-        return await get_amazon_product_info(product_url)
-
-    else:
-        return None
+    return None
