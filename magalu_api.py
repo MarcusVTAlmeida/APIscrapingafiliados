@@ -1,6 +1,6 @@
 import re
 import random
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 from urllib.parse import urlparse, urlunparse
 
 MAGALU_STORE = "in_603815"
@@ -24,11 +24,11 @@ def format_magalu_store(store_id: str) -> str:
     return store_id
 
 def limpar_url(url: str) -> str:
-    """Remove parâmetros que aumentam bloqueio (ads, seller_id etc)."""
     p = urlparse(url)
     return urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
 
-def get_magalu_product_info(product_url: str) -> dict | None:
+# 🔥 AGORA É ASYNC
+async def get_magalu_product_info(product_url: str) -> dict | None:
     try:
         loja = format_magalu_store(MAGALU_STORE)
 
@@ -39,8 +39,8 @@ def get_magalu_product_info(product_url: str) -> dict | None:
             affiliate_link = f"https://www.magazinevoce.com.br/magazine{loja}{path}"
             affiliate_link = limpar_url(affiliate_link)
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
                 headless=True,
                 args=[
                     "--disable-blink-features=AutomationControlled",
@@ -49,7 +49,7 @@ def get_magalu_product_info(product_url: str) -> dict | None:
                 ],
             )
 
-            context = browser.new_context(
+            context = await browser.new_context(
                 locale="pt-BR",
                 user_agent=(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -58,18 +58,18 @@ def get_magalu_product_info(product_url: str) -> dict | None:
                 ),
             )
 
-            page = context.new_page()
-            page.goto(affiliate_link, wait_until="networkidle", timeout=60000)
+            page = await context.new_page()
+            await page.goto(affiliate_link, wait_until="networkidle", timeout=60000)
 
             # 🚨 DETECTA BLOQUEIO
             if "az-request-verify" in page.url:
-                raise Exception("Bloqueado pela verificação da Magalu")
+                raise Exception("Bloqueio anti-bot da Magalu")
 
-            html = page.content()
-            browser.close()
+            html = await page.content()
+            await browser.close()
 
         # -------------------
-        # EXTRAÇÃO VIA REGEX / HTML
+        # EXTRAÇÃO
         # -------------------
         def find(pattern):
             m = re.search(pattern, html, re.I | re.S)
@@ -97,13 +97,11 @@ def get_magalu_product_info(product_url: str) -> dict | None:
 
         info["price_original"] = find(r'data-testid="price-original".*?>\s*(R\$[^<]+)')
         info["price_pix"] = find(r'data-testid="price-value".*?>.*?(R\$[^<]+)')
-        info["pix_discount"] = find(r'\((\d+% de desconto no pix)\)')
-
+        info["pix_discount"] = find(r'(\d+% de desconto no pix)')
         info["card_installments"] = find(r'(\d+x de R\$[^<]+)')
-        info["card_total"] = find(r'Cartão de crédito.*?(R\$[^<]+)',)
 
         # -------------------
-        # CAPTION FINAL
+        # CAPTION
         # -------------------
         caption = f"📦 {info['name']}\n"
 
@@ -120,7 +118,6 @@ def get_magalu_product_info(product_url: str) -> dict | None:
         caption += f"\n🔗 {affiliate_link}"
 
         info["caption"] = caption.strip()
-
         return info
 
     except Exception as e:
