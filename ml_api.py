@@ -2,89 +2,92 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
+
+def normalize_price(value):
+    """
+    Recebe '48.9', '4899', '48,90' e retorna '48,90'
+    """
+    value = value.strip().replace(".", "").replace(",", ".")
+    try:
+        return f"{float(value):.2f}".replace(".", ",")
+    except:
+        return value
+
+
 def get_ml_product_info(product_url):
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+
         resp = requests.get(product_url, headers=headers, timeout=15)
 
         if resp.status_code != 200:
-            return {
-                "title": "Produto indisponível",
-                "price": "Preço indisponível",
-                "original_value": None,
-                "url": product_url,
-                "image": None,
-                "caption": "Produto indisponível",
-            }
+            raise Exception("Status code inválido")
 
         soup = BeautifulSoup(resp.text, "html.parser")
 
         # =========================
         # NOME
         # =========================
-        tag = soup.find("meta", property="og:title") or soup.find("title")
         name = (
-            tag.get("content")
-            if tag and tag.has_attr("content")
-            else tag.text if tag else "Produto Mercado Livre"
+            soup.find("meta", property="og:title")["content"]
+            if soup.find("meta", property="og:title")
+            else "Produto Mercado Livre"
         )
 
         # =========================
         # IMAGEM
         # =========================
-        tag = soup.find("meta", property="og:image")
-        image = tag.get("content") if tag else None
+        image = (
+            soup.find("meta", property="og:image")["content"]
+            if soup.find("meta", property="og:image")
+            else None
+        )
 
         # =========================
         # PREÇO ATUAL
         # =========================
-        current_price = "Preço indisponível"
+        current_price = None
 
-        meta_price = soup.find("meta", attrs={"itemprop": "price"})
-        if meta_price and meta_price.get("content"):
-            current_price = f"R$ {meta_price['content'].strip()}"
+        price_meta = soup.find("meta", itemprop="price")
+        if price_meta and price_meta.get("content"):
+            current_price = f"R$ {normalize_price(price_meta['content'])}"
         else:
-            price_frac = soup.find("span", class_=re.compile("andes-money-amount__fraction"))
-            price_cents = soup.find("span", class_=re.compile("andes-money-amount__cents"))
+            frac = soup.find("span", class_=re.compile("andes-money-amount__fraction"))
+            cents = soup.find("span", class_=re.compile("andes-money-amount__cents"))
 
-            if price_frac:
-                p = price_frac.get_text(strip=True)
-                if price_cents:
-                    p += "," + price_cents.get_text(strip=True)
-                current_price = f"R$ {p}"
+            if frac:
+                value = frac.text
+                if cents:
+                    value += f".{cents.text}"
+                current_price = f"R$ {normalize_price(value)}"
 
         # =========================
         # PREÇO ORIGINAL (RISCADO)
         # =========================
         original_value = None
 
-        # tenta container oficial
-        original_container = soup.find(
-            "span", class_=re.compile("ui-pdp-price__original-value")
+        original_tag = (
+            soup.find("span", class_=re.compile("andes-money-amount--previous"))
+            or soup.find("span", class_=re.compile("ui-pdp-price__original-value"))
+            or soup.find("s")
         )
 
-        # fallback: qualquer <s>
-        if not original_container:
-            original_container = soup.find("s")
+        if original_tag:
+            frac = original_tag.find("span", class_=re.compile("andes-money-amount__fraction"))
+            cents = original_tag.find("span", class_=re.compile("andes-money-amount__cents"))
 
-        if original_container:
-            orig_frac = original_container.find(
-                "span", class_=re.compile("andes-money-amount__fraction")
-            )
-            orig_cents = original_container.find(
-                "span", class_=re.compile("andes-money-amount__cents")
-            )
-
-            if orig_frac:
-                o = orig_frac.get_text(strip=True)
-                if orig_cents:
-                    o += "," + orig_cents.get_text(strip=True)
-                original_value = f"R$ {o}"
+            if frac:
+                value = frac.text
+                if cents:
+                    value += f".{cents.text}"
+                original_value = f"R$ {normalize_price(value)}"
 
         # =========================
         # CAPTION
         # =========================
-        if original_value and current_price != "Preço indisponível":
+        if original_value and current_price:
             caption = (
                 f"🔥 OFERTA IMPERDÍVEL 🔥\n\n"
                 f"{name}\n\n"
@@ -95,7 +98,7 @@ def get_ml_product_info(product_url):
             caption = (
                 f"🔥 OFERTA IMPERDÍVEL 🔥\n\n"
                 f"{name}\n\n"
-                f"💰 {current_price}\n\n"
+                f"💰 {current_price or 'Preço indisponível'}\n\n"
                 f"👉 Compre agora:\n{product_url}"
             )
 
@@ -111,10 +114,10 @@ def get_ml_product_info(product_url):
     except Exception as e:
         print("Erro ML:", e)
         return {
-            "title": "Produto ML",
-            "price": "Preço indisponível",
+            "title": "Produto Mercado Livre",
+            "price": None,
             "original_value": None,
             "url": product_url,
             "image": None,
-            "caption": "Preço indisponível",
+            "caption": "Erro ao obter produto",
         }
