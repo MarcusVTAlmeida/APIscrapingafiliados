@@ -41,6 +41,22 @@ def encurtar_link(url: str) -> str:
         pass
     return url
 
+def normalize_magalu_price(text: str | None) -> str | None:
+    """
+    Corrige preços quebrados do Magalu:
+    'R$ 202 , 39' -> 'R$ 202,39'
+    """
+    if not text:
+        return text
+
+    # Remove espaços antes/depois da vírgula
+    text = re.sub(r"\s*,\s*", ",", text)
+
+    # Remove espaço extra após R$
+    text = re.sub(r"R\$\s+", "R$ ", text)
+
+    return text.strip()
+
 
 def get_magalu_product_info(product_url: str) -> dict:
     try:
@@ -101,7 +117,8 @@ def get_magalu_product_info(product_url: str) -> dict:
 
             # Preço Pix
             if (pix := price_default.find("p", {"data-testid": "price-value"})):
-                info["price_pix"] = pix.get_text(" ", strip=True).replace("ou ", "")
+                raw_price = pix.get_text(" ", strip=True).replace("ou ", "")
+                info["price_pix"] = normalize_magalu_price(raw_price)
 
             # Método Pix
             if (pix_m := price_default.find("span", {"data-testid": "in-cash"})):
