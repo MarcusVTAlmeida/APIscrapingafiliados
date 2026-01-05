@@ -5,13 +5,25 @@ from bs4 import BeautifulSoup
 
 def normalize_price(value):
     """
-    Recebe '48.9', '4899', '48,90' e retorna '48,90'
+    Recebe '48.9', '48.90', '48,90', '4899' e retorna '48,90'
     """
-    value = value.strip().replace(".", "").replace(",", ".")
+    if not value:
+        return value
+
+    value = value.strip()
+
+    # Se vier no formato brasileiro
+    if "," in value:
+        value = value.replace(".", "").replace(",", ".")
+    else:
+        # Formato internacional (48.9, 48.90)
+        value = value.replace(" ", "")
+
     try:
         return f"{float(value):.2f}".replace(".", ",")
     except:
         return value
+
 
 def get_ml_product_info(product_url):
     try:
