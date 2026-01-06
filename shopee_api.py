@@ -4,8 +4,6 @@ import json
 import hashlib
 import requests
 
-APP_ID = "18353340769"
-SECRET = "374QPPMAEZPMZRILPQQXKSBEOHCWIHGU"
 API_URL = "https://open-api.affiliate.shopee.com.br/graphql"
 
 
@@ -25,8 +23,8 @@ def extract_item_id(product_url):
     return None
 
 
-def generate_signature(payload, timestamp):
-    factor = f"{APP_ID}{timestamp}{payload}{SECRET}"
+def generate_signature(app_id, secret, payload, timestamp):
+    factor = f"{app_id}{timestamp}{payload}{secret}"
     return hashlib.sha256(factor.encode()).hexdigest()
 
 
@@ -42,7 +40,7 @@ def format_price(value):
 # FUNÇÃO PRINCIPAL
 # ===============================
 
-def get_shopee_product_info(product_url):
+def get_shopee_product_info(product_url, app_id, secret):
     item_id = extract_item_id(product_url)
 
     if not item_id:
@@ -73,11 +71,15 @@ def get_shopee_product_info(product_url):
     }
 
     payload_json = json.dumps(payload_shortlink, separators=(",", ":"))
-    signature = generate_signature(payload_json, timestamp)
+    signature = generate_signature(app_id, secret, payload_json, timestamp)
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"SHA256 Credential={APP_ID},Timestamp={timestamp},Signature={signature}",
+        "Authorization": (
+            f"SHA256 Credential={app_id},"
+            f"Timestamp={timestamp},"
+            f"Signature={signature}"
+        ),
     }
 
     response = requests.post(API_URL, data=payload_json, headers=headers, timeout=15)
@@ -97,7 +99,7 @@ def get_shopee_product_info(product_url):
     # ===============================
     # BUSCAR INFO DO PRODUTO
     # ===============================
-    timestamp = int(time.time())  # ⚠️ TIMESTAMP NOVO
+    timestamp = int(time.time())
 
     payload_product = {
         "query": f"""
@@ -114,16 +116,22 @@ def get_shopee_product_info(product_url):
     }
 
     payload_json_product = json.dumps(payload_product, separators=(",", ":"))
-    signature_product = generate_signature(payload_json_product, timestamp)
+    signature_product = generate_signature(app_id, secret, payload_json_product, timestamp)
 
     headers_product = {
         "Content-Type": "application/json",
-        "Authorization": f"SHA256 Credential={APP_ID},Timestamp={timestamp},Signature={signature_product}",
+        "Authorization": (
+            f"SHA256 Credential={app_id},"
+            f"Timestamp={timestamp},"
+            f"Signature={signature_product}"
+        ),
     }
 
-    response2 = requests.post(API_URL, data=payload_json_product, headers=headers_product, timeout=15)
-    info_data = response2.json()
+    response2 = requests.post(
+        API_URL, data=payload_json_product, headers=headers_product, timeout=15
+    )
 
+    info_data = response2.json()
     nodes = info_data.get("data", {}).get("productOfferV2", {}).get("nodes", [])
 
     if not nodes:
