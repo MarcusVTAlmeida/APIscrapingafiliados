@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "435953713901",
+    "firebase_url": "https://agente-vendas-ocjqjj.firebaseio.com",
+    "project_id": "agente-vendas-ocjqjj",
+    "storage_bucket": "agente-vendas-ocjqjj.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:435953713901:android:7d5122c20db0a2c2db82e4",
+        "android_client_info": {
+          "package_name": "com.botafiliado"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "435953713901-fr72lcr36j1n012duhg6dkbslastpitm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCcVsCWu2AxtWVhMg2bso4U_3vviaEQ6Zg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "435953713901-1h5hurvp3hpbqduanvhljv1sacrt39ma.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
