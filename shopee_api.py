@@ -107,9 +107,10 @@ def get_shopee_product_info(product_url):
             productOfferV2(itemId:{item_id}) {{
                 nodes {{
                     productName
-                    price
-                    priceBeforeDiscount
-                    discount
+                    priceMin
+                    priceMax
+                    priceMinBeforeDiscount
+                    priceMaxBeforeDiscount
                     imageUrl
                 }}
             }}
@@ -146,21 +147,24 @@ def get_shopee_product_info(product_url):
     productname = node.get("productName", "Desconhecido")
     image_url = node.get("imageUrl")
 
-    price_raw = node.get("price")
-    old_raw = node.get("priceBeforeDiscount")
-    discount = node.get("discount")
+    price_min = node.get("priceMin")
+    price_before = node.get("priceMinBeforeDiscount")
 
-    price_text = format_price(price_raw)
+    price_text = format_price(price_min)
     original_value = (
-        format_price(old_raw)
-        if old_raw and old_raw != price_raw
+        format_price(price_before)
+        if price_before and price_before != price_min
         else None
     )
+
+    discount = None
+    if price_before and price_min and price_before > price_min:
+        discount = round((1 - (price_min / price_before)) * 100)
 
     # ===============================
     # CAPTION FINAL
     # ===============================
-    if original_value and price_text:
+    if original_value and price_text and discount:
         caption = (
             f"📦 {productname}\n"
             f"💰 De {original_value} por {price_text}\n"
