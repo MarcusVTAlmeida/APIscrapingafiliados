@@ -4,7 +4,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import traceback
 
-from shopee import get_shopee_product_info
+from shopee_api import get_shopee_product_info  # ✅ OK
 
 # ===============================
 # FIREBASE INIT (SEGURO)
@@ -79,7 +79,6 @@ def scrape(data: ScrapeRequest):
             secret=secret
         )
 
-        # Segurança extra
         if not result or not isinstance(result, dict):
             return {
                 "error": True,
