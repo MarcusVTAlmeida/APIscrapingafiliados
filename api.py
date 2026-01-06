@@ -9,7 +9,7 @@ from shopee_api import get_shopee_product_info  # ✅ OK
 # ===============================
 # FIREBASE INIT (SEGURO)
 # ===============================
-cred = credentials.Certificate("google-services.json")
+cred = credentials.Certificate("serviceAccount.json")
 
 if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
