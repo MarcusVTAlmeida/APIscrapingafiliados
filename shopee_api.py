@@ -49,18 +49,16 @@ def get_shopee_product_info(product_url):
         return {
             "title": None,
             "price": None,
-            "original_value": None,
-            "discount": None,
             "caption": "❌ Não foi possível identificar o produto.",
             "image": None,
             "url": product_url,
         }
 
-    timestamp = int(time.time())
-
     # ===============================
     # GERAR LINK AFILIADO
     # ===============================
+    timestamp = int(time.time())
+
     payload_shortlink = {
         "query": f"""
         mutation {{
@@ -91,8 +89,6 @@ def get_shopee_product_info(product_url):
         return {
             "title": None,
             "price": None,
-            "original_value": None,
-            "discount": None,
             "caption": "❌ Erro ao gerar link afiliado.",
             "image": None,
             "url": product_url,
@@ -101,6 +97,8 @@ def get_shopee_product_info(product_url):
     # ===============================
     # BUSCAR INFO DO PRODUTO
     # ===============================
+    timestamp = int(time.time())  # ⚠️ TIMESTAMP NOVO
+
     payload_product = {
         "query": f"""
         query {{
@@ -108,9 +106,6 @@ def get_shopee_product_info(product_url):
                 nodes {{
                     productName
                     priceMin
-                    priceMax
-                    priceMinBeforeDiscount
-                    priceMaxBeforeDiscount
                     imageUrl
                 }}
             }}
@@ -135,8 +130,6 @@ def get_shopee_product_info(product_url):
         return {
             "title": None,
             "price": None,
-            "original_value": None,
-            "discount": None,
             "caption": "❌ Produto não encontrado.",
             "image": None,
             "url": short_link,
@@ -146,39 +139,17 @@ def get_shopee_product_info(product_url):
 
     productname = node.get("productName", "Desconhecido")
     image_url = node.get("imageUrl")
+    price_text = format_price(node.get("priceMin"))
 
-    price_min = node.get("priceMin")
-    price_before = node.get("priceMinBeforeDiscount")
-
-    price_text = format_price(price_min)
-    original_value = (
-        format_price(price_before)
-        if price_before and price_before != price_min
-        else None
+    caption = (
+        f"📦 {productname}\n"
+        f"💰 {price_text}\n"
+        f"🔗 {short_link}"
     )
-
-    discount = None
-    if price_before and price_min and price_before > price_min:
-        discount = round((1 - (price_min / price_before)) * 100)
-
-    # ===============================
-    # CAPTION FINAL
-    # ===============================
-    if original_value and price_text and discount:
-        caption = (
-            f"📦 {productname}\n"
-            f"💰 De {original_value} por {price_text}\n"
-            f"🏷️ Desconto: {discount}%\n"
-            f"🔗 {short_link}"
-        )
-    else:
-        caption = f"📦 {productname}\n💰 {price_text}\n🔗 {short_link}"
 
     return {
         "title": productname,
         "price": price_text,
-        "original_value": original_value,
-        "discount": discount,
         "caption": caption,
         "image": image_url,
         "url": short_link,
