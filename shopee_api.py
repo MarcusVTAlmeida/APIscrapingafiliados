@@ -7,10 +7,6 @@ import requests
 API_URL = "https://open-api.affiliate.shopee.com.br/graphql"
 
 
-# ===============================
-# UTILIDADES
-# ===============================
-
 def extract_item_id(product_url):
     match = re.search(r'-i\.\d+\.(\d+)', product_url)
     if match:
@@ -36,21 +32,11 @@ def format_price(value):
         return None
 
 
-# ===============================
-# FUNÇÃO PRINCIPAL
-# ===============================
-
 def get_shopee_product_info(product_url, app_id, secret):
     item_id = extract_item_id(product_url)
 
     if not item_id:
-        return {
-            "title": None,
-            "price": None,
-            "caption": "❌ Não foi possível identificar o produto.",
-            "image": None,
-            "url": product_url,
-        }
+        return {"error": "Produto inválido"}
 
     # ===============================
     # GERAR LINK AFILIADO
@@ -82,22 +68,15 @@ def get_shopee_product_info(product_url, app_id, secret):
         ),
     }
 
-    response = requests.post(API_URL, data=payload_json, headers=headers, timeout=15)
-    data = response.json()
+    res = requests.post(API_URL, data=payload_json, headers=headers, timeout=15)
+    data = res.json()
 
     short_link = data.get("data", {}).get("generateShortLink", {}).get("shortLink")
-
-    if not short_link or "errors" in data:
-        return {
-            "title": None,
-            "price": None,
-            "caption": "❌ Erro ao gerar link afiliado.",
-            "image": None,
-            "url": product_url,
-        }
+    if not short_link:
+        return {"error": "Erro ao gerar link afiliado"}
 
     # ===============================
-    # BUSCAR INFO DO PRODUTO
+    # PRODUTO
     # ===============================
     timestamp = int(time.time())
 
@@ -127,38 +106,18 @@ def get_shopee_product_info(product_url, app_id, secret):
         ),
     }
 
-    response2 = requests.post(
-        API_URL, data=payload_json_product, headers=headers_product, timeout=15
-    )
+    res2 = requests.post(API_URL, data=payload_json_product, headers=headers_product, timeout=15)
+    info = res2.json()
 
-    info_data = response2.json()
-    nodes = info_data.get("data", {}).get("productOfferV2", {}).get("nodes", [])
-
+    nodes = info.get("data", {}).get("productOfferV2", {}).get("nodes", [])
     if not nodes:
-        return {
-            "title": None,
-            "price": None,
-            "caption": "❌ Produto não encontrado.",
-            "image": None,
-            "url": short_link,
-        }
+        return {"error": "Produto não encontrado"}
 
     node = nodes[0]
 
-    productname = node.get("productName", "Desconhecido")
-    image_url = node.get("imageUrl")
-    price_text = format_price(node.get("priceMin"))
-
-    caption = (
-        f"📦 {productname}\n"
-        f"💰 {price_text}\n"
-        f"🔗 {short_link}"
-    )
-
     return {
-        "title": productname,
-        "price": price_text,
-        "caption": caption,
-        "image": image_url,
+        "title": node.get("productName"),
+        "price": format_price(node.get("priceMin")),
+        "image": node.get("imageUrl"),
         "url": short_link,
     }

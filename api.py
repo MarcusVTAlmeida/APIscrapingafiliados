@@ -1,79 +1,98 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import asyncio
+import firebase_admin
+from firebase_admin import credentials, firestore
+import traceback
 
-from product_info_router import get_product_info
+from shopee import get_shopee_product_info
 
-app = FastAPI(title="Scraper Bot API")
+# ===============================
+# FIREBASE INIT (SEGURO)
+# ===============================
+cred = credentials.Certificate("serviceAccount.json")
 
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(cred)
 
-def normalize_image(img: str | None):
-    if not img:
-        return None
+db = firestore.client()
 
-    if img.startswith("//"):
-        return "https:" + img
-
-    return img
-
-
-def normalize_product(result, url: str):
-    """
-    Normaliza qualquer retorno (dict | tuple) para o padrão da API
-    """
-    if isinstance(result, dict):
-        return {
-            "title": result.get("title"),
-            "price": result.get("price"),
-            "original_value": result.get("original_value"),  # ✅ AQUI
-            "caption": result.get("caption"),
-            "image": normalize_image(result.get("image")),
-            "url": result.get("url", url),
-        }
+app = FastAPI()
 
 
-    if isinstance(result, tuple):
-        caption, title, price, image = result
-        return {
-            "title": title,
-            "price": price,
-            "caption": caption,
-            "image": normalize_image(image),
-            "url": url,
-        }
-
-    return {
-        "title": None,
-        "price": None,
-        "caption": "❌ Não foi possível obter o produto.",
-        "image": None,
-        "url": url,
-    }
-
-
-# 📥 Modelo de entrada
+# ===============================
+# MODELS
+# ===============================
 class ScrapeRequest(BaseModel):
     url: str
+    uid: str
 
 
-@app.post("/scrape")
-async def scrape_product(data: ScrapeRequest):
-    url = data.url.strip()
-
+# ===============================
+# FIRESTORE - CONFIG SHOPEE
+# ===============================
+def get_user_shopee_config(uid: str):
     try:
-        result = get_product_info(url)
+        ref = (
+            db.collection("users")
+            .document(uid)
+            .collection("shopee")
+            .document("config")
+        )
 
-        # 🟢 Caso async (Amazon / Playwright)
-        if asyncio.iscoroutine(result):
-            result = await result
+        doc = ref.get()
 
-        return normalize_product(result, url)
+        if not doc.exists:
+            return None, None
+
+        data = doc.to_dict()
+        return data.get("app_id"), data.get("secret")
 
     except Exception as e:
+        print("🔥 Erro ao buscar config Shopee:", e)
+        traceback.print_exc()
+        return None, None
+
+
+# ===============================
+# ENDPOINT PRINCIPAL
+# ===============================
+@app.post("/scrape")
+def scrape(data: ScrapeRequest):
+    if not data.url or not data.uid:
         return {
-            "title": None,
-            "price": None,
-            "caption": f"⚠️ Erro interno: {str(e)}",
-            "image": None,
-            "url": url,
+            "error": True,
+            "message": "URL ou UID não informados"
+        }
+
+    app_id, secret = get_user_shopee_config(data.uid)
+
+    if not app_id or not secret:
+        return {
+            "error": True,
+            "message": "Configuração Shopee não encontrada para este usuário"
+        }
+
+    try:
+        result = get_shopee_product_info(
+            product_url=data.url,
+            app_id=app_id,
+            secret=secret
+        )
+
+        # Segurança extra
+        if not result or not isinstance(result, dict):
+            return {
+                "error": True,
+                "message": "Resposta inválida da Shopee"
+            }
+
+        return result
+
+    except Exception as e:
+        print("🔥 Erro no scrape:", e)
+        traceback.print_exc()
+
+        return {
+            "error": True,
+            "message": "Erro interno ao processar o produto"
         }
