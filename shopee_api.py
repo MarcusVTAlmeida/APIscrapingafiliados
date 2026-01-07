@@ -117,7 +117,7 @@ def get_shopee_product_info(product_url, app_id, secret):
 
     return {
         "title": node.get("productName"),
-        "price": format_price(node.get("priceMin")),
+        "price": format_price(node.get("price")),
         "image": node.get("imageUrl"),
         "url": short_link,
     }
