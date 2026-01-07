@@ -7,6 +7,9 @@ import requests
 API_URL = "https://open-api.affiliate.shopee.com.br/graphql"
 
 
+# ===============================
+# EXTRAI ITEM ID
+# ===============================
 def extract_item_id(product_url):
     match = re.search(r'-i\.\d+\.(\d+)', product_url)
     if match:
@@ -19,28 +22,39 @@ def extract_item_id(product_url):
     return None
 
 
+# ===============================
+# ASSINATURA
+# ===============================
 def generate_signature(app_id, secret, payload, timestamp):
     factor = f"{app_id}{timestamp}{payload}{secret}"
     return hashlib.sha256(factor.encode()).hexdigest()
 
 
+# ===============================
+# FORMATA PREÇO (CORRETO)
+# ===============================
 def format_price(value):
+    if value is None:
+        return None
     try:
-        value = float(value) / 100000
+        value = float(value) / 100  # padrão correto da Shopee
         return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except:
         return None
 
 
+# ===============================
+# FUNÇÃO PRINCIPAL
+# ===============================
 def get_shopee_product_info(product_url, app_id, secret):
     item_id = extract_item_id(product_url)
 
     if not item_id:
         return {"error": "Produto inválido"}
 
-    # ===============================
-    # GERAR LINK AFILIADO
-    # ===============================
+    # =====================================================
+    # 1️⃣ GERAR LINK AFILIADO
+    # =====================================================
     timestamp = int(time.time())
 
     payload_shortlink = {
@@ -68,16 +82,22 @@ def get_shopee_product_info(product_url, app_id, secret):
         ),
     }
 
-    res = requests.post(API_URL, data=payload_json, headers=headers, timeout=15)
+    res = requests.post(
+        API_URL,
+        data=payload_json,
+        headers=headers,
+        timeout=15
+    )
+
     data = res.json()
 
     short_link = data.get("data", {}).get("generateShortLink", {}).get("shortLink")
     if not short_link:
         return {"error": "Erro ao gerar link afiliado"}
 
-    # ===============================
-    # PRODUTO
-    # ===============================
+    # =====================================================
+    # 2️⃣ BUSCAR PRODUTO
+    # =====================================================
     timestamp = int(time.time())
 
     payload_product = {
@@ -87,6 +107,8 @@ def get_shopee_product_info(product_url, app_id, secret):
                 nodes {{
                     productName
                     priceMin
+                    priceMinBeforeDiscount
+                    priceMax
                     imageUrl
                 }}
             }}
@@ -106,7 +128,13 @@ def get_shopee_product_info(product_url, app_id, secret):
         ),
     }
 
-    res2 = requests.post(API_URL, data=payload_json_product, headers=headers_product, timeout=15)
+    res2 = requests.post(
+        API_URL,
+        data=payload_json_product,
+        headers=headers_product,
+        timeout=15
+    )
+
     info = res2.json()
 
     nodes = info.get("data", {}).get("productOfferV2", {}).get("nodes", [])
@@ -115,9 +143,18 @@ def get_shopee_product_info(product_url, app_id, secret):
 
     node = nodes[0]
 
+    # =====================================================
+    # 3️⃣ ESCOLHER PREÇO CORRETO
+    # =====================================================
+    price_raw = (
+        node.get("priceMinBeforeDiscount")
+        or node.get("priceMin")
+        or node.get("priceMax")
+    )
+
     return {
         "title": node.get("productName"),
-        "price": format_price(node.get("price")),
+        "price": format_price(price_raw),
         "image": node.get("imageUrl"),
         "url": short_link,
     }
