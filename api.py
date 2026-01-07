@@ -2,16 +2,23 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import firebase_admin
 from firebase_admin import credentials, firestore
+import os
+import json
 import traceback
 
-from shopee_api import get_shopee_product_info  # ✅ OK
+from shopee import get_shopee_product_info
 
 # ===============================
-# FIREBASE INIT (SEGURO)
+# FIREBASE INIT (RENDER SAFE)
 # ===============================
-cred = credentials.Certificate("serviceAccount.json")
-
 if not firebase_admin._apps:
+    firebase_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
+
+    if not firebase_json:
+        raise Exception("FIREBASE_SERVICE_ACCOUNT não configurado")
+
+    cred_dict = json.loads(firebase_json)
+    cred = credentials.Certificate(cred_dict)
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
@@ -54,44 +61,32 @@ def get_user_shopee_config(uid: str):
 
 
 # ===============================
-# ENDPOINT PRINCIPAL
+# ENDPOINT
 # ===============================
 @app.post("/scrape")
 def scrape(data: ScrapeRequest):
     if not data.url or not data.uid:
-        return {
-            "error": True,
-            "message": "URL ou UID não informados"
-        }
+        return {"error": True, "message": "URL ou UID não informados"}
 
     app_id, secret = get_user_shopee_config(data.uid)
 
     if not app_id or not secret:
         return {
             "error": True,
-            "message": "Configuração Shopee não encontrada para este usuário"
+            "message": "Configuração Shopee não encontrada"
         }
 
     try:
-        result = get_shopee_product_info(
+        return get_shopee_product_info(
             product_url=data.url,
             app_id=app_id,
             secret=secret
         )
 
-        if not result or not isinstance(result, dict):
-            return {
-                "error": True,
-                "message": "Resposta inválida da Shopee"
-            }
-
-        return result
-
     except Exception as e:
         print("🔥 Erro no scrape:", e)
         traceback.print_exc()
-
         return {
             "error": True,
-            "message": "Erro interno ao processar o produto"
+            "message": "Erro interno ao processar produto"
         }
