@@ -6,7 +6,6 @@ import requests
 
 API_URL = "https://open-api.affiliate.shopee.com.br/graphql"
 
-
 def extract_item_id(product_url):
     match = re.search(r'-i\.\d+\.(\d+)', product_url)
     if match:
@@ -18,19 +17,16 @@ def extract_item_id(product_url):
 
     return None
 
-
 def generate_signature(app_id, secret, payload, timestamp):
     factor = f"{app_id}{timestamp}{payload}{secret}"
     return hashlib.sha256(factor.encode()).hexdigest()
 
-
 def format_price(value):
     try:
-        value = float(value) / 100000
+        value = float(value) / 100  # ✅ CORRIGIDO
         return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except:
         return None
-
 
 def get_shopee_product_info(product_url, app_id, secret):
     item_id = extract_item_id(product_url)
