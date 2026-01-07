@@ -22,9 +22,10 @@ def generate_signature(app_id, secret, payload, timestamp):
     return hashlib.sha256(factor.encode()).hexdigest()
 
 def format_price(value):
+    """Formata o preço que já vem como string (ex: '83.7')"""
     try:
-        value = float(value) / 1000000  # ✅ Divida por 1.000.000
-        return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        valor_float = float(value)
+        return f"R$ {valor_float:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except:
         return None
 
@@ -82,7 +83,7 @@ def get_shopee_product_info(product_url, app_id, secret):
             productOfferV2(itemId:{item_id}) {{
                 nodes {{
                     productName
-                    priceMin
+                    price
                     imageUrl
                 }}
             }}
@@ -113,7 +114,7 @@ def get_shopee_product_info(product_url, app_id, secret):
 
     return {
         "title": node.get("productName"),
-        "price": format_price(node.get("priceMin")),
+        "price": format_price(node.get("price")),
         "image": node.get("imageUrl"),
         "url": short_link,
     }
