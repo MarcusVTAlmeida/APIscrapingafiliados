@@ -23,7 +23,7 @@ def generate_signature(app_id, secret, payload, timestamp):
 
 def format_price(value):
     try:
-        value = float(value) / 100  # ✅ CORRIGIDO
+        value = float(value) / 1000000  # ✅ Divida por 1.000.000
         return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except:
         return None
