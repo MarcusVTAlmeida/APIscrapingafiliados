@@ -6,7 +6,7 @@ import os
 import json
 import traceback
 
-from shopee import get_shopee_product_info
+from shopee_api import get_shopee_product_info
 
 # ===============================
 # FIREBASE INIT (RENDER SAFE)

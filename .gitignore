@@ -1,1 +1,9 @@
+# Firebase / Google
 serviceAccount.json
+
+# Env
+.env
+.env.*
+
+# Histórico do VS Code
+.history/
