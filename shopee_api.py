@@ -1,119 +1,123 @@
-def get_shopee_product_info(product_url):
+import re
+import time
+import json
+import hashlib
+import requests
+
+API_URL = "https://open-api.affiliate.shopee.com.br/graphql"
+
+
+def extract_item_id(product_url):
+    match = re.search(r'-i\.\d+\.(\d+)', product_url)
+    if match:
+        return match.group(1)
+
+    match = re.search(r'/product/\d+/(\d+)', product_url)
+    if match:
+        return match.group(1)
+
+    return None
+
+
+def generate_signature(app_id, secret, payload, timestamp):
+    factor = f"{app_id}{timestamp}{payload}{secret}"
+    return hashlib.sha256(factor.encode()).hexdigest()
+
+
+def format_price(value):
     try:
-        item_id = extract_item_id(product_url)
-        if not item_id:
-            return {"error": "Produto inválido"}
+        value = float(value) / 100000
+        return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except:
+        return None
 
-        timestamp = int(time.time())
 
-        # ===============================
-        # LINK AFILIADO
-        # ===============================
-        payload_shortlink = {
-            "query": f"""
-            mutation {{
-                generateShortLink(input: {{
-                    originUrl: "{product_url}",
-                    subIds: ["s1"]
-                }}) {{
-                    shortLink
+def get_shopee_product_info(product_url, app_id, secret):
+    item_id = extract_item_id(product_url)
+
+    if not item_id:
+        return {"error": "Produto inválido"}
+
+    # ===============================
+    # GERAR LINK AFILIADO
+    # ===============================
+    timestamp = int(time.time())
+
+    payload_shortlink = {
+        "query": f"""
+        mutation {{
+            generateShortLink(input: {{
+                originUrl: "{product_url}",
+                subIds: ["s1"]
+            }}) {{
+                shortLink
+            }}
+        }}
+        """
+    }
+
+    payload_json = json.dumps(payload_shortlink, separators=(",", ":"))
+    signature = generate_signature(app_id, secret, payload_json, timestamp)
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": (
+            f"SHA256 Credential={app_id},"
+            f"Timestamp={timestamp},"
+            f"Signature={signature}"
+        ),
+    }
+
+    res = requests.post(API_URL, data=payload_json, headers=headers, timeout=15)
+    data = res.json()
+
+    short_link = data.get("data", {}).get("generateShortLink", {}).get("shortLink")
+    if not short_link:
+        return {"error": "Erro ao gerar link afiliado"}
+
+    # ===============================
+    # PRODUTO
+    # ===============================
+    timestamp = int(time.time())
+
+    payload_product = {
+        "query": f"""
+        query {{
+            productOfferV2(itemId:{item_id}) {{
+                nodes {{
+                    productName
+                    priceMin
+                    imageUrl
                 }}
             }}
-            """
-        }
+        }}
+        """
+    }
 
-        payload_json = json.dumps(payload_shortlink, separators=(",", ":"))
-        signature = generate_signature(payload_json, timestamp)
+    payload_json_product = json.dumps(payload_product, separators=(",", ":"))
+    signature_product = generate_signature(app_id, secret, payload_json_product, timestamp)
 
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"SHA256 Credential={APP_ID},Timestamp={timestamp},Signature={signature}",
-        }
+    headers_product = {
+        "Content-Type": "application/json",
+        "Authorization": (
+            f"SHA256 Credential={app_id},"
+            f"Timestamp={timestamp},"
+            f"Signature={signature_product}"
+        ),
+    }
 
-        response = requests.post(API_URL, data=payload_json, headers=headers, timeout=10)
+    res2 = requests.post(API_URL, data=payload_json_product, headers=headers_product, timeout=15)
+    info = res2.json()
 
-        try:
-            data = response.json()
-        except Exception:
-            return {"error": "Resposta inválida da Shopee (link afiliado)"}
+    nodes = info.get("data", {}).get("productOfferV2", {}).get("nodes", [])
+    if not nodes:
+        return {"error": "Produto não encontrado"}
 
-        short_link = data.get("data", {}).get("generateShortLink", {}).get("shortLink")
-        if not short_link:
-            return {"error": "Erro ao gerar link afiliado"}
+    node = nodes[0]
 
-        # ===============================
-        # PRODUTO
-        # ===============================
-        payload_product = {
-            "query": f"""
-            query {{
-                productOfferV2(itemId:{item_id}) {{
-                    nodes {{
-                        productName
-                        priceMin
-                        priceMax
-                        imageUrl
-                    }}
-                }}
-            }}
-            """
-        }
-
-        payload_json_product = json.dumps(payload_product, separators=(",", ":"))
-        signature_product = generate_signature(payload_json_product, timestamp)
-
-        headers_product = {
-            "Content-Type": "application/json",
-            "Authorization": f"SHA256 Credential={APP_ID},Timestamp={timestamp},Signature={signature_product}",
-        }
-
-        response2 = requests.post(API_URL, data=payload_json_product, headers=headers_product, timeout=10)
-
-        try:
-            info_data = response2.json()
-        except Exception:
-            return {"error": "Resposta inválida da Shopee (produto)"}
-
-        nodes = info_data.get("data", {}).get("productOfferV2", {}).get("nodes") or []
-        if not nodes:
-            return {"error": "Produto sem oferta afiliada"}
-
-        node = nodes[0]
-
-        productname = node.get("productName")
-        image_url = node.get("imageUrl")
-
-        min_price = node.get("priceMin")
-        max_price = node.get("priceMax")
-
-        price_text = None
-        original_value = None
-
-        def safe_price(v):
-            try:
-                return f"R$ {float(v)/100:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            except:
-                return None
-
-        price_text = safe_price(min_price)
-        if max_price and max_price != min_price:
-            original_value = safe_price(max_price)
-
-        caption = (
-            f"📦 {productname}\n💰 {price_text}\n🔗 {short_link}"
-            if not original_value
-            else f"📦 {productname}\n💰 De {original_value} por {price_text}\n🔗 {short_link}"
-        )
-
-        return {
-            "title": productname,
-            "price": price_text,
-            "original_value": original_value,
-            "caption": caption,
-            "image": image_url,
-            "url": short_link,
-        }
-
-    except Exception as e:
-        # isso evita o "erro interno" genérico
-        return {"error": f"Falha inesperada: {str(e)}"}
+    return {
+        "title": node.get("productName"),
+        "price": format_price(node.get("priceMin")),
+        "image": node.get("imageUrl"),
+        "url": short_link,
+    }
