@@ -6,7 +6,7 @@ import os
 import json
 import traceback
 
-from shopee_api import get_shopee_product_info
+from product_info_router import get_product_info
 
 # ===============================
 # FIREBASE INIT (RENDER SAFE)
@@ -25,14 +25,12 @@ db = firestore.client()
 
 app = FastAPI()
 
-
 # ===============================
 # MODELS
 # ===============================
 class ScrapeRequest(BaseModel):
     url: str
     uid: str
-
 
 # ===============================
 # FIRESTORE - CONFIG SHOPEE
@@ -59,29 +57,38 @@ def get_user_shopee_config(uid: str):
         traceback.print_exc()
         return None, None
 
-
 # ===============================
 # ENDPOINT
 # ===============================
 @app.post("/scrape")
 def scrape(data: ScrapeRequest):
     if not data.url or not data.uid:
-        return {"error": True, "message": "URL ou UID não informados"}
-
-    app_id, secret = get_user_shopee_config(data.uid)
-
-    if not app_id or not secret:
         return {
             "error": True,
-            "message": "Configuração Shopee não encontrada"
+            "message": "URL ou UID não informados"
         }
 
     try:
-        return get_shopee_product_info(
-            product_url=data.url,
-            app_id=app_id,
-            secret=secret
-        )
+        url_lower = data.url.lower()
+
+        # 🔐 Shopee precisa de credenciais
+        if "shopee" in url_lower:
+            app_id, secret = get_user_shopee_config(data.uid)
+
+            if not app_id or not secret:
+                return {
+                    "error": True,
+                    "message": "Configuração Shopee não encontrada"
+                }
+
+            return get_product_info(
+                url=data.url,
+                app_id=app_id,
+                secret=secret
+            )
+
+        # 🟢 Mercado Livre / Amazon / Magalu
+        return get_product_info(url=data.url)
 
     except Exception as e:
         print("🔥 Erro no scrape:", e)
