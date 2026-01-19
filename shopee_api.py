@@ -6,10 +6,36 @@ import requests
 
 API_URL = "https://open-api.affiliate.shopee.com.br/graphql"
 
-def extract_item_id(product_url):
-    match = re.search(r'-i\.\d+\.(\d+)', product_url)
+
+# ===============================
+# RESOLVE LINK CURTO SHOPEE
+# ===============================
+def resolve_shopee_url(url: str) -> str:
+    try:
+        # HEAD é mais rápido, mas alguns links exigem GET
+        response = requests.get(
+            url,
+            allow_redirects=True,
+            timeout=10,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        return response.url
+    except Exception as e:
+        print("Erro ao resolver link curto:", e)
+        return url
+
+
+# ===============================
+# EXTRACT ITEM ID
+# ===============================
+def extract_item_id(product_url: str):
+    # Se for link curto da Shopee, resolve primeiro
+    if "s.shopee.com.br" in product_url:
+        product_url = resolve_shopee_url(product_url)
+
+    match = re.search(r'-i\.(\d+)\.(\d+)', product_url)
     if match:
-        return match.group(1)
+        return match.group(2)
 
     match = re.search(r'/product/\d+/(\d+)', product_url)
     if match:
@@ -17,23 +43,34 @@ def extract_item_id(product_url):
 
     return None
 
+
+# ===============================
+# SIGNATURE
+# ===============================
 def generate_signature(app_id, secret, payload, timestamp):
     factor = f"{app_id}{timestamp}{payload}{secret}"
     return hashlib.sha256(factor.encode()).hexdigest()
 
+
+# ===============================
+# FORMAT PRICE
+# ===============================
 def format_price(value):
-    """Formata o preço que já vem como string (ex: '83.7')"""
     try:
         valor_float = float(value)
         return f"R$ {valor_float:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except:
         return None
 
+
+# ===============================
+# MAIN FUNCTION
+# ===============================
 def get_shopee_product_info(product_url, app_id, secret):
     item_id = extract_item_id(product_url)
 
     if not item_id:
-        return {"error": "Produto inválido"}
+        return {"error": "Produto inválido ou link não reconhecido"}
 
     # ===============================
     # GERAR LINK AFILIADO
