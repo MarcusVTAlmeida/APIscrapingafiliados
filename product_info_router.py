@@ -1,5 +1,6 @@
 from shopee_api import get_shopee_product_info
 from ml_api import get_ml_product_info
+from url_resolver import expand_url
 
 
 def get_product_info(
@@ -7,7 +8,9 @@ def get_product_info(
     app_id: str | None = None,
     secret: str | None = None
 ):
-    url_lower = url.lower()
+    # 🔥 resolve link curto
+    final_url = expand_url(url)
+    url_lower = final_url.lower()
 
     # ===============================
     # SHOPEE
@@ -20,7 +23,7 @@ def get_product_info(
             }
 
         return get_shopee_product_info(
-            product_url=url,
+            product_url=final_url,
             app_id=app_id,
             secret=secret
         )
@@ -29,7 +32,7 @@ def get_product_info(
     # MERCADO LIVRE
     # ===============================
     if "mercadolivre" in url_lower or "mercado" in url_lower:
-        return get_ml_product_info(url)
+        return get_ml_product_info(final_url)
 
     return {
         "error": True,
