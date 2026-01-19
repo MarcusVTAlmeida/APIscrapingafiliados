@@ -31,15 +31,6 @@ def get_product_info(
     if "mercadolivre" in url_lower or "mercado" in url_lower:
         return get_ml_product_info(url)
 
-    # ===============================
-    # AMAZON (REMOVIDA DO BACKEND)
-    # ===============================
-    if "amazon" in url_lower or "amzn.to" in url_lower:
-        return {
-            "error": True,
-            "message": "Amazon é processada no aplicativo"
-        }
-
     return {
         "error": True,
         "message": "Loja não suportada"
