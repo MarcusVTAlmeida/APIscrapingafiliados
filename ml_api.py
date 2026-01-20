@@ -27,85 +27,59 @@ def normalize_price(value):
 
 def get_ml_product_info(product_url):
     try:
+        original_url = product_url  # 👈 guarda o link como o usuário mandou
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
-        resp = requests.get(product_url, headers=headers, timeout=15)
+
+        resp = requests.get(
+            product_url,
+            headers=headers,
+            timeout=15,
+            allow_redirects=True
+        )
         resp.raise_for_status()
+
+        final_url = resp.url  # 👈 usado só para scraping
 
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # Título
+        # TÍTULO
         title_tag = soup.find("meta", property="og:title")
-        title = title_tag["content"] if (title_tag and title_tag.get("content")) else "Produto Mercado Livre"
+        title = title_tag["content"] if title_tag else "Produto Mercado Livre"
 
-        # Imagem
+        # IMAGEM
         image_tag = soup.find("meta", property="og:image")
-        image = image_tag["content"] if (image_tag and image_tag.get("content")) else None
+        image = image_tag["content"] if image_tag else None
 
-        # Preço atual
+        # PREÇO
         price = None
         price_meta = soup.find("meta", itemprop="price")
         if price_meta and price_meta.get("content"):
             price = f"R$ {normalize_price(price_meta['content'])}"
-        else:
-            frac = soup.find("span", class_=re.compile("andes-money-amount__fraction"))
-            cents = soup.find("span", class_=re.compile("andes-money-amount__cents"))
-            if frac:
-                v = frac.text
-                if cents:
-                    v += f".{cents.text}"
-                price = f"R$ {normalize_price(v)}"
 
-        # Preço original (riscado)
+        # PREÇO ORIGINAL
         original_value = None
-        original_tag = (
-            soup.find("span", class_=re.compile("andes-money-amount--previous"))
-            or soup.find("span", class_=re.compile("ui-pdp-price__original-value"))
-            or soup.find("s")
-        )
+        original_tag = soup.find("span", class_=re.compile("previous"))
         if original_tag:
-            txt = original_tag.get_text().strip()
-            if txt:
-                # Remover eventual duplicata do "R$"
-                if txt.startswith("R$"):
-                    txt = txt.replace("R$", "").strip()
-                original_value = f"R$ {normalize_price(txt)}"
+            txt = original_tag.get_text(strip=True).replace("R$", "")
+            original_value = f"R$ {normalize_price(txt)}"
 
-        # Tentativa via JSON-LD (caso o método anterior não encontre)
-        if not original_value:
-            ld_tag = soup.find("script", type="application/ld+json")
-            if ld_tag and ld_tag.string:
-                try:
-                    data_ld = json.loads(ld_tag.string)
-                    offers = data_ld.get("offers", {})
-                    high_price = offers.get("highPrice")
-                    if high_price:
-                        original_value = f"R$ {normalize_price(str(high_price))}"
-                except Exception as e_json:
-                    print("Erro ao analisar JSON-LD:", e_json)
-
-        # Montagem da legenda utilizando o campo original_value (quando disponível)
-        if original_value and price:
-            caption = (
-                f"🔥 OFERTA IMPERDÍVEL 🔥\n\n"
-                f"{title}\n\n"
-                f"De {original_value} por {price}\n\n"
-                f"👉 Compre agora:\n{product_url}"
-            )
-        else:
-            caption = (
-                f"🔥 OFERTA IMPERDÍVEL 🔥\n\n"
-                f"{title}\n\n"
-                f"💰 {price or 'Preço indisponível'}\n\n"
-                f"👉 Compre agora:\n{product_url}"
-            )
+        # LEGENDA
+        caption = (
+            f"🔥 OFERTA IMPERDÍVEL 🔥\n\n"
+            f"{title}\n\n"
+            f"{f'De {original_value}\n' if original_value else ''}"
+            f"💰 {price or 'Preço indisponível'}\n\n"
+            f"👉 Compre agora:\n{original_url}"
+        )
 
         return {
             "title": title,
             "price": price,
             "original_value": original_value,
-            "url": product_url,
+            "url": original_url,  # ✅ SEMPRE o encurtado
             "image": image,
             "caption": caption,
         }
@@ -113,13 +87,11 @@ def get_ml_product_info(product_url):
     except Exception as e:
         print("Erro ML:", e)
         return {
-            "title": "Produto Mercado Livre",
-            "price": None,
-            "original_value": None,
-            "url": product_url,
-            "image": None,
-            "caption": "Erro ao obter produto",
+            "error": True,
+            "message": "Erro ao obter produto",
+            "url": product_url
         }
+
 
 # if __name__ == "__main__":
 #     # Teste com uma URL válida do Mercado Livre.
