@@ -3,6 +3,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 
+
 def normalize_price(value):
     """
     Recebe '48.9', '48.90', '48,90', '4899' e retorna '48,90'
@@ -12,11 +13,9 @@ def normalize_price(value):
 
     value = value.strip()
 
-    # Se vier no formato brasileiro
     if "," in value:
         value = value.replace(".", "").replace(",", ".")
     else:
-        # Formato internacional (48.9, 48.90)
         value = value.replace(" ", "")
 
     try:
@@ -24,31 +23,70 @@ def normalize_price(value):
     except:
         return value
 
-def get_ml_product_info(product_url, original_url=None):
+
+def resolve_url(url: str) -> str:
     """
-    original_url: A URL encurtada/original que o usuário mandou
-    product_url: A URL resolvida/completa para fazer scraping
+    Resolve URLs encurtadas (amzn.to, bit.ly, etc)
     """
     try:
+        resp = requests.get(
+            url,
+            allow_redirects=True,
+            timeout=15,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            }
+        )
+        return resp.url
+    except Exception as e:
+        print("Erro ao resolver URL:", e)
+        return url
+
+
+def get_ml_product_info(product_url, original_url=None):
+    """
+    original_url: URL que o usuário enviou (encurtada ou não)
+    product_url: URL resolvida para scraping
+    """
+    try:
+        # ✅ Resolver URL encurtada
+        resolved_url = resolve_url(product_url)
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
-        resp = requests.get(product_url, headers=headers, timeout=15)
+
+        resp = requests.get(resolved_url, headers=headers, timeout=15)
         resp.raise_for_status()
 
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # Título
+        # ===============================
+        # TÍTULO
+        # ===============================
         title_tag = soup.find("meta", property="og:title")
-        title = title_tag["content"] if (title_tag and title_tag.get("content")) else "Produto Mercado Livre"
+        title = (
+            title_tag["content"]
+            if title_tag and title_tag.get("content")
+            else "Produto Mercado Livre"
+        )
 
-        # Imagem
+        # ===============================
+        # IMAGEM
+        # ===============================
         image_tag = soup.find("meta", property="og:image")
-        image = image_tag["content"] if (image_tag and image_tag.get("content")) else None
+        image = (
+            image_tag["content"]
+            if image_tag and image_tag.get("content")
+            else None
+        )
 
-        # Preço atual
+        # ===============================
+        # PREÇO ATUAL
+        # ===============================
         price = None
         price_meta = soup.find("meta", itemprop="price")
+
         if price_meta and price_meta.get("content"):
             price = f"R$ {normalize_price(price_meta['content'])}"
         else:
@@ -60,22 +98,25 @@ def get_ml_product_info(product_url, original_url=None):
                     v += f".{cents.text}"
                 price = f"R$ {normalize_price(v)}"
 
-        # Preço original (riscado)
+        # ===============================
+        # PREÇO ORIGINAL (RISCADO)
+        # ===============================
         original_value = None
         original_tag = (
             soup.find("span", class_=re.compile("andes-money-amount--previous"))
             or soup.find("span", class_=re.compile("ui-pdp-price__original-value"))
             or soup.find("s")
         )
+
         if original_tag:
             txt = original_tag.get_text().strip()
-            if txt:
-                # Remover eventual duplicata do "R$"
-                if txt.startswith("R$"):
-                    txt = txt.replace("R$", "").strip()
-                original_value = f"R$ {normalize_price(txt)}"
+            if txt.startswith("R$"):
+                txt = txt.replace("R$", "").strip()
+            original_value = f"R$ {normalize_price(txt)}"
 
-        # Tentativa via JSON-LD (caso o método anterior não encontre)
+        # ===============================
+        # JSON-LD (fallback)
+        # ===============================
         if not original_value:
             ld_tag = soup.find("script", type="application/ld+json")
             if ld_tag and ld_tag.string:
@@ -85,13 +126,15 @@ def get_ml_product_info(product_url, original_url=None):
                     high_price = offers.get("highPrice")
                     if high_price:
                         original_value = f"R$ {normalize_price(str(high_price))}"
-                except Exception as e_json:
-                    print("Erro ao analisar JSON-LD:", e_json)
+                except Exception as e:
+                    print("Erro JSON-LD:", e)
 
-        # ✅ USAR A URL ORIGINAL (encurtada) se foi fornecida, senão usar a completa
+        # ✅ Retornar sempre a URL ORIGINAL do usuário
         url_para_retornar = original_url if original_url else product_url
 
-        # Montagem da legenda utilizando o campo original_value (quando disponível)
+        # ===============================
+        # CAPTION
+        # ===============================
         if original_value and price:
             caption = (
                 f"🔥 OFERTA IMPERDÍVEL 🔥\n\n"
@@ -111,7 +154,7 @@ def get_ml_product_info(product_url, original_url=None):
             "title": title,
             "price": price,
             "original_value": original_value,
-            "url": url_para_retornar,  # ✅ AQUI RETORNA A URL ORIGINAL
+            "url": url_para_retornar,
             "image": image,
             "caption": caption,
         }
@@ -123,7 +166,7 @@ def get_ml_product_info(product_url, original_url=None):
             "title": "Produto Mercado Livre",
             "price": None,
             "original_value": None,
-            "url": url_para_retornar,  # ✅ AQUI TAMBÉM
+            "url": url_para_retornar,
             "image": None,
             "caption": "Erro ao obter produto",
         }
