@@ -26,7 +26,7 @@ def normalize_price(value):
 
 def resolve_url(url: str) -> str:
     """
-    Resolve URLs encurtadas (amzn.to, bit.ly, etc)
+    Resolve URLs encurtadas (amzn.to, bit.ly, /sec/, etc)
     """
     try:
         resp = requests.get(
@@ -41,6 +41,40 @@ def resolve_url(url: str) -> str:
     except Exception as e:
         print("Erro ao resolver URL:", e)
         return url
+
+
+def extract_prices_from_affiliate_json(html):
+    """
+    Extrai preço atual e preço original de páginas afiliadas (/sec/)
+    """
+    try:
+        matches = re.findall(
+            r'\{[^{}]*"previous_price"[^{}]*\}',
+            html,
+            re.DOTALL
+        )
+
+        for m in matches:
+            try:
+                data = json.loads(m)
+
+                prev = data.get("previous_price", {}).get("value")
+                curr = data.get("current_price", {}).get("value")
+
+                if curr:
+                    price = f"R$ {normalize_price(str(curr))}"
+                    original = (
+                        f"R$ {normalize_price(str(prev))}"
+                        if prev else None
+                    )
+                    return price, original
+            except:
+                continue
+
+    except Exception as e:
+        print("Erro JSON afiliado:", e)
+
+    return None, None
 
 
 def get_ml_product_info(product_url, original_url=None):
@@ -59,7 +93,8 @@ def get_ml_product_info(product_url, original_url=None):
         resp = requests.get(resolved_url, headers=headers, timeout=15)
         resp.raise_for_status()
 
-        soup = BeautifulSoup(resp.text, "html.parser")
+        html = resp.text
+        soup = BeautifulSoup(html, "html.parser")
 
         # ===============================
         # TÍTULO
@@ -82,40 +117,55 @@ def get_ml_product_info(product_url, original_url=None):
         )
 
         # ===============================
-        # PREÇO ATUAL
+        # PREÇOS (CASO /sec/)
         # ===============================
         price = None
-        price_meta = soup.find("meta", itemprop="price")
-
-        if price_meta and price_meta.get("content"):
-            price = f"R$ {normalize_price(price_meta['content'])}"
-        else:
-            frac = soup.find("span", class_=re.compile("andes-money-amount__fraction"))
-            cents = soup.find("span", class_=re.compile("andes-money-amount__cents"))
-            if frac:
-                v = frac.text
-                if cents:
-                    v += f".{cents.text}"
-                price = f"R$ {normalize_price(v)}"
-
-        # ===============================
-        # PREÇO ORIGINAL (RISCADO)
-        # ===============================
         original_value = None
-        original_tag = (
-            soup.find("span", class_=re.compile("andes-money-amount--previous"))
-            or soup.find("span", class_=re.compile("ui-pdp-price__original-value"))
-            or soup.find("s")
-        )
 
-        if original_tag:
-            txt = original_tag.get_text().strip()
-            if txt.startswith("R$"):
-                txt = txt.replace("R$", "").strip()
-            original_value = f"R$ {normalize_price(txt)}"
+        if "/sec/" in resolved_url:
+            price, original_value = extract_prices_from_affiliate_json(html)
 
         # ===============================
-        # JSON-LD (fallback)
+        # PREÇO ATUAL (HTML fallback)
+        # ===============================
+        if not price:
+            price_meta = soup.find("meta", itemprop="price")
+
+            if price_meta and price_meta.get("content"):
+                price = f"R$ {normalize_price(price_meta['content'])}"
+            else:
+                frac = soup.find(
+                    "span",
+                    class_=re.compile("andes-money-amount__fraction")
+                )
+                cents = soup.find(
+                    "span",
+                    class_=re.compile("andes-money-amount__cents")
+                )
+                if frac:
+                    v = frac.text
+                    if cents:
+                        v += f".{cents.text}"
+                    price = f"R$ {normalize_price(v)}"
+
+        # ===============================
+        # PREÇO ORIGINAL (HTML fallback)
+        # ===============================
+        if not original_value:
+            original_tag = (
+                soup.find("span", class_=re.compile("andes-money-amount--previous"))
+                or soup.find("span", class_=re.compile("ui-pdp-price__original-value"))
+                or soup.find("s")
+            )
+
+            if original_tag:
+                txt = original_tag.get_text().strip()
+                if txt.startswith("R$"):
+                    txt = txt.replace("R$", "").strip()
+                original_value = f"R$ {normalize_price(txt)}"
+
+        # ===============================
+        # JSON-LD (fallback final)
         # ===============================
         if not original_value:
             ld_tag = soup.find("script", type="application/ld+json")
@@ -129,7 +179,7 @@ def get_ml_product_info(product_url, original_url=None):
                 except Exception as e:
                     print("Erro JSON-LD:", e)
 
-        # ✅ Retornar sempre a URL ORIGINAL do usuário
+        # ✅ Retornar sempre a URL ORIGINAL
         url_para_retornar = original_url if original_url else product_url
 
         # ===============================
@@ -170,6 +220,7 @@ def get_ml_product_info(product_url, original_url=None):
             "image": None,
             "caption": "Erro ao obter produto",
         }
+
 
 
 # if __name__ == "__main__":
