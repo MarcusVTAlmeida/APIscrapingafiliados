@@ -49,7 +49,7 @@ def extract_prices_from_affiliate_json(html):
     """
     try:
         matches = re.findall(
-            r'\{[^{}]*"previous_price"[^{}]*\}',
+            r'\{[^{}]*"current_price"[^{}]*\}',
             html,
             re.DOTALL
         )
@@ -58,8 +58,8 @@ def extract_prices_from_affiliate_json(html):
             try:
                 data = json.loads(m)
 
-                prev = data.get("previous_price", {}).get("value")
                 curr = data.get("current_price", {}).get("value")
+                prev = data.get("previous_price", {}).get("value")
 
                 if curr:
                     price = f"R$ {normalize_price(str(curr))}"
@@ -83,7 +83,10 @@ def get_ml_product_info(product_url, original_url=None):
     product_url: URL resolvida para scraping
     """
     try:
-        # ✅ Resolver URL encurtada
+        # ✅ Guarda URL original
+        original_url = original_url or product_url
+
+        # ✅ Resolve URL APENAS UMA VEZ
         resolved_url = resolve_url(product_url)
 
         headers = {
@@ -117,11 +120,12 @@ def get_ml_product_info(product_url, original_url=None):
         )
 
         # ===============================
-        # PREÇOS (CASO /sec/)
+        # PREÇOS
         # ===============================
         price = None
         original_value = None
 
+        # ✅ PRIORIDADE TOTAL PARA /sec/
         if "/sec/" in resolved_url:
             price, original_value = extract_prices_from_affiliate_json(html)
 
@@ -160,8 +164,7 @@ def get_ml_product_info(product_url, original_url=None):
 
             if original_tag:
                 txt = original_tag.get_text().strip()
-                if txt.startswith("R$"):
-                    txt = txt.replace("R$", "").strip()
+                txt = txt.replace("R$", "").strip()
                 original_value = f"R$ {normalize_price(txt)}"
 
         # ===============================
@@ -179,9 +182,6 @@ def get_ml_product_info(product_url, original_url=None):
                 except Exception as e:
                     print("Erro JSON-LD:", e)
 
-        # ✅ Retornar sempre a URL ORIGINAL
-        url_para_retornar = original_url if original_url else product_url
-
         # ===============================
         # CAPTION
         # ===============================
@@ -190,38 +190,35 @@ def get_ml_product_info(product_url, original_url=None):
                 f"🔥 OFERTA IMPERDÍVEL 🔥\n\n"
                 f"{title}\n\n"
                 f"De {original_value} por {price}\n\n"
-                f"👉 Compre agora:\n{url_para_retornar}"
+                f"👉 Compre agora:\n{original_url}"
             )
         else:
             caption = (
                 f"🔥 OFERTA IMPERDÍVEL 🔥\n\n"
                 f"{title}\n\n"
                 f"💰 {price or 'Preço indisponível'}\n\n"
-                f"👉 Compre agora:\n{url_para_retornar}"
+                f"👉 Compre agora:\n{original_url}"
             )
 
         return {
             "title": title,
             "price": price,
             "original_value": original_value,
-            "url": url_para_retornar,
+            "url": original_url,
             "image": image,
             "caption": caption,
         }
 
     except Exception as e:
         print("Erro ML:", e)
-        url_para_retornar = original_url if original_url else product_url
         return {
             "title": "Produto Mercado Livre",
             "price": None,
             "original_value": None,
-            "url": url_para_retornar,
+            "url": original_url or product_url,
             "image": None,
             "caption": "Erro ao obter produto",
         }
-
-
 
 # if __name__ == "__main__":
 #     # Teste com uma URL válida do Mercado Livre.
