@@ -46,35 +46,34 @@ def resolve_url(url: str) -> str:
 def extract_prices_from_affiliate_json(html):
     """
     Extrai preço atual e preço original de páginas afiliadas (/sec/)
+    usando regex segura (sem json.loads em bloco quebrado)
     """
     try:
-        matches = re.findall(
-            r'\{[^{}]*"current_price"[^{}]*\}',
-            html,
-            re.DOTALL
+        # Preço atual
+        curr_match = re.search(
+            r'"current_price"\s*:\s*\{[^}]*"value"\s*:\s*([\d.]+)',
+            html
         )
 
-        for m in matches:
-            try:
-                data = json.loads(m)
+        # Preço original
+        prev_match = re.search(
+            r'"previous_price"\s*:\s*\{[^}]*"value"\s*:\s*([\d.]+)',
+            html
+        )
 
-                curr = data.get("current_price", {}).get("value")
-                prev = data.get("previous_price", {}).get("value")
+        curr = curr_match.group(1) if curr_match else None
+        prev = prev_match.group(1) if prev_match else None
 
-                if curr:
-                    price = f"R$ {normalize_price(str(curr))}"
-                    original = (
-                        f"R$ {normalize_price(str(prev))}"
-                        if prev else None
-                    )
-                    return price, original
-            except:
-                continue
+        if curr:
+            price = f"R$ {normalize_price(curr)}"
+            original = f"R$ {normalize_price(prev)}" if prev else None
+            return price, original
 
     except Exception as e:
-        print("Erro JSON afiliado:", e)
+        print("Erro afiliado ML:", e)
 
     return None, None
+
 
 
 def get_ml_product_info(product_url, original_url=None):
