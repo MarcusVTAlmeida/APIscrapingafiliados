@@ -49,13 +49,11 @@ def extract_prices_from_affiliate_json(html):
     usando regex segura (sem json.loads em bloco quebrado)
     """
     try:
-        # Preço atual
         curr_match = re.search(
             r'"current_price"\s*:\s*\{[^}]*"value"\s*:\s*([\d.]+)',
             html
         )
 
-        # Preço original
         prev_match = re.search(
             r'"previous_price"\s*:\s*\{[^}]*"value"\s*:\s*([\d.]+)',
             html
@@ -75,17 +73,13 @@ def extract_prices_from_affiliate_json(html):
     return None, None
 
 
-
 def get_ml_product_info(product_url, original_url=None):
     """
     original_url: URL que o usuário enviou (encurtada ou não)
     product_url: URL resolvida para scraping
     """
     try:
-        # ✅ Guarda URL original
         original_url = original_url or product_url
-
-        # ✅ Resolve URL APENAS UMA VEZ
         resolved_url = resolve_url(product_url)
 
         headers = {
@@ -129,7 +123,7 @@ def get_ml_product_info(product_url, original_url=None):
             price, original_value = extract_prices_from_affiliate_json(html)
 
         # ===============================
-        # PREÇO ATUAL (HTML fallback)
+        # PREÇO ATUAL (HTML fallback CORRIGIDO)
         # ===============================
         if not price:
             price_meta = soup.find("meta", itemprop="price")
@@ -137,19 +131,23 @@ def get_ml_product_info(product_url, original_url=None):
             if price_meta and price_meta.get("content"):
                 price = f"R$ {normalize_price(price_meta['content'])}"
             else:
-                frac = soup.find(
-                    "span",
-                    class_=re.compile("andes-money-amount__fraction")
+                current_container = soup.find(
+                    "div", class_=re.compile("poly-price__current")
                 )
-                cents = soup.find(
-                    "span",
-                    class_=re.compile("andes-money-amount__cents")
-                )
-                if frac:
-                    v = frac.text
-                    if cents:
-                        v += f".{cents.text}"
-                    price = f"R$ {normalize_price(v)}"
+
+                if current_container:
+                    frac = current_container.find(
+                        "span", class_=re.compile("andes-money-amount__fraction")
+                    )
+                    cents = current_container.find(
+                        "span", class_=re.compile("andes-money-amount__cents")
+                    )
+
+                    if frac:
+                        v = frac.text.strip()
+                        if cents:
+                            v += f".{cents.text.strip()}"
+                        price = f"R$ {normalize_price(v)}"
 
         # ===============================
         # PREÇO ORIGINAL (HTML fallback)
@@ -218,6 +216,7 @@ def get_ml_product_info(product_url, original_url=None):
             "image": None,
             "caption": "Erro ao obter produto",
         }
+
 
 # if __name__ == "__main__":
 #     # Teste com uma URL válida do Mercado Livre.
