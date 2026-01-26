@@ -3,23 +3,75 @@ import json
 import requests
 from bs4 import BeautifulSoup
 
-
 def normalize_price(value):
     """
-    Recebe '48.9', '48.90', '48,90', '4899' e retorna '48,90'
+    Normaliza preços de diferentes formatos para 'R$ X.XXX,XX'
+    
+    Exemplos:
+    - "1745.03" (API/JSON decimal inglês) → "1.745,03"
+    - "1.745,03" (formato BR) → "1.745,03"
+    - "1745" → "1.745,00"
+    - "48.9" (decimal inglês) → "48,90"
+    - "48,90" (BR) → "48,90"
     """
     if not value:
         return value
 
-    value = value.strip()
-
-    if "," in value:
+    value = str(value).strip()
+    
+    # Remove espaços e símbolos de moeda
+    value = value.replace("R$", "").replace(" ", "")
+    
+    # Conta quantos pontos e vírgulas tem
+    dot_count = value.count(".")
+    comma_count = value.count(",")
+    
+    # Caso 1: Tem vírgula E ponto → formato brasileiro "1.745,03"
+    if comma_count > 0 and dot_count > 0:
+        # Remove pontos (milhares) e troca vírgula por ponto
         value = value.replace(".", "").replace(",", ".")
-    else:
-        value = value.replace(" ", "")
-
+    
+    # Caso 2: Só tem vírgula → formato brasileiro "1745,03" ou "48,90"
+    elif comma_count > 0:
+        value = value.replace(",", ".")
+    
+    # Caso 3: Só tem ponto → pode ser milhar OU decimal
+    elif dot_count > 0:
+        # Se tem mais de um ponto, é separador de milhar: "1.745.320"
+        if dot_count > 1:
+            value = value.replace(".", "")
+        else:
+            # Um único ponto: verificar posição
+            parts = value.split(".")
+            
+            # Se a parte decimal tem exatamente 2 dígitos → decimal inglês "1745.03"
+            if len(parts) == 2 and len(parts[1]) == 2:
+                pass  # já está correto (ponto = decimal)
+            
+            # Se parte decimal tem 3 dígitos → é separador de milhar "1.745"
+            elif len(parts) == 2 and len(parts[1]) == 3:
+                value = value.replace(".", "")
+            
+            # Se número muito grande com ponto → provavelmente milhar
+            elif len(parts[0]) <= 3:
+                pass  # decimal "48.9"
+            else:
+                value = value.replace(".", "")
+    
+    # Caso 4: Só números → pode ser centavos "4899" ou inteiro "1745"
+    # Vamos assumir que se >= 100, não tem centavos embutidos
+    # (se necessário ajustar essa lógica)
+    
     try:
-        return f"{float(value):.2f}".replace(".", ",")
+        num = float(value)
+        
+        # Formata com separador de milhares e vírgula decimal (padrão BR)
+        formatted = f"{num:,.2f}"
+        
+        # Troca vírgula (milhar) por ponto e ponto (decimal) por vírgula
+        formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+        
+        return formatted
     except:
         return value
 
@@ -49,11 +101,13 @@ def extract_prices_from_affiliate_json(html):
     usando regex segura (sem json.loads em bloco quebrado)
     """
     try:
+        # Preço atual
         curr_match = re.search(
             r'"current_price"\s*:\s*\{[^}]*"value"\s*:\s*([\d.]+)',
             html
         )
 
+        # Preço anterior
         prev_match = re.search(
             r'"previous_price"\s*:\s*\{[^}]*"value"\s*:\s*([\d.]+)',
             html
@@ -218,8 +272,12 @@ def get_ml_product_info(product_url, original_url=None):
         }
 
 
-# if __name__ == "__main__":
-#     # Teste com uma URL válida do Mercado Livre.
-#     url = "https://www.mercadolivre.com.br/tomada-inteligente-smart-wi-fi-24-ghz-10a-110v220v-bivolt-branco-cod-291990608-neo-avant/p/MLB37193095#reco_item_pos=2&reco_backend=item_decorator&reco_backend_type=function&reco_client=home_items-decorator-legacy&reco_id=55028c62-c051-4249-a5de-bf2933a8d9da&reco_model=&c_id=/home/second-best-navigation-trend-recommendations/element&c_uid=3bfbc2a8-8cfd-4726-b14a-9537c59e68d0&da_id=second_best_navigation_trend&da_position=2&id_origin=/home/dynamic_access&da_sort_algorithm=ranker"
-#     info = get_ml_product_info(url)
-#     print(info)
+if __name__ == "__main__":
+    # Testes
+    print("Teste 1 (link completo):")
+    url1 = "https://www.mercadolivre.com.br/bicicleta-ergometrica-para-spinning-mecanica-roda-de-inercia-18kg-pace6000-odin-fit/p/MLB53188187"
+    print(get_ml_product_info(url1))
+    
+    print("\n\nTeste 2 (link /sec/):")
+    url2 = "https://mercadolivre.com/sec/2DeMaJG"
+    print(get_ml_product_info(url2))
