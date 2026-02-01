@@ -30,7 +30,14 @@ def resolve_shopee_url(url: str) -> str:
 # ===============================
 def extract_item_id(product_url: str):
     # Se for link curto da Shopee, resolve primeiro
-    if "s.shopee.com.br" in product_url:
+    SHOPEE_SHORT_DOMAINS = [
+        "s.shopee.com.br",
+        "shopee.com.br",
+        "br.shp.ee",
+        "shp.ee",
+    ]
+
+    if any(domain in product_url for domain in SHOPEE_SHORT_DOMAINS):
         product_url = resolve_shopee_url(product_url)
 
     match = re.search(r'-i\.(\d+)\.(\d+)', product_url)
